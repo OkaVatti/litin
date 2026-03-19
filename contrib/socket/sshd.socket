@@ -1,0 +1,17 @@
+# /etc/litin/sockets/sshd.socket
+#
+# Socket unit for SSH — activates sshd on first connection.
+# Copy to /etc/litin/sockets/sshd.socket to enable socket activation.
+#
+# With socket activation, the SSH port is bound at boot but sshd itself
+# does not start until the first incoming connection. This gives faster
+# boot times while still keeping the port available immediately.
+
+name="sshd.socket"
+listen="0.0.0.0:22"
+service="sshd"
+accept="no"
+backlog="128"
+socket_user="root"
+socket_group="root"
+socket_mode="0600"

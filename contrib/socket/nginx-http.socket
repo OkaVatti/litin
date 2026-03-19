@@ -1,0 +1,13 @@
+# /etc/litin/sockets/nginx-http.socket
+#
+# Socket activation for Nginx port 80.
+# Bind port 80 at boot; start nginx only when traffic arrives.
+
+name="nginx-http.socket"
+listen="0.0.0.0:80"
+service="nginx"
+accept="no"
+backlog="4096"
+socket_user="root"
+socket_group="root"
+socket_mode="0600"

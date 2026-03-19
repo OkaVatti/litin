@@ -1,0 +1,33 @@
+#!/bin/sh
+# packaging/alpine/litin.pre-install
+#
+# Warn the operator before installing litin as a replacement init system.
+
+pre_install() {
+	cat <<'EOF'
+
+  ┌──────────────────────────────────────────────────────────────┐
+  │  Litin init system installation                              │
+  │                                                              │
+  │  litin-init is installed at /sbin/litin-init.                │
+  │  To activate it as PID 1, update your bootloader:            │
+  │                                                              │
+  │    GRUB:  linux ... init=/sbin/litin-init                    │
+  │    syslinux: APPEND ... init=/sbin/litin-init                │
+  │                                                              │
+  │  Service definitions go in /etc/litin/services/              │
+  │  Enable services with: litinctl enable <service>             │
+  │                                                              │
+  │  See /usr/share/litin/README.md and MIGRATING.md             │
+  └──────────────────────────────────────────────────────────────┘
+
+EOF
+}
+
+pre_upgrade() {
+	:
+}
+
+pre_deinstall() {
+	:
+}

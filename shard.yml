@@ -1,0 +1,49 @@
+name: litin
+version: 0.1.0
+
+description: >
+  Litin — a modern, minimal init system for Linux.
+  Supervisor-first, shell-friendly service definitions,
+  cgroup v2 isolation, socket activation, structured event journal,
+  and compatibility shims for OpenRC, Runit, and systemd.
+
+authors:
+  - OkaVatti <okavatti@proton.me>
+
+crystal: ">= 1.19.1"
+
+license: MIT
+
+targets:
+  litin-init:
+    main: src/litin_init.cr
+
+  litind:
+    main: src/litind.cr
+
+  litinctl:
+    main: src/litinctl.cr
+
+  rc-service:
+    main: src/compat/rc_service_bin.cr
+
+  rc-update:
+    main: src/compat/rc_update_bin.cr
+
+  rc-status:
+    main: src/compat/rc_status_bin.cr
+
+  systemctl:
+    main: src/compat/systemctl_bin.cr
+
+  sv:
+    main: src/compat/sv_bin.cr
+
+  runsvdir:
+    main: src/compat/runsvdir_bin.cr
+
+  chpst:
+    main: src/compat/chpst_bin.cr
+
+  dinitctl:
+    main: src/compat/dinitctl_bin.cr

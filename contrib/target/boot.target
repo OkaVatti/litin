@@ -1,0 +1,12 @@
+# /etc/litin/targets/boot.target
+#
+# Boot target — reached when essential early services are up.
+
+name="boot"
+description="Essential system services"
+
+depend() {
+  require localfs
+  want udev
+  want syslog
+}

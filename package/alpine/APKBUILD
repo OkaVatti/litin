@@ -1,0 +1,110 @@
+# Maintainer: Litin contributors
+pkgname=litin
+pkgver=0.1.0
+pkgrel=0
+pkgdesc="A modern, minimal init system for Linux"
+url="https://github.com/litin-init/litin"
+arch="x86_64 aarch64"
+license="MIT"
+makedepends="crystal shards"
+install="$pkgname.pre-install"
+subpackages="
+  $pkgname-openrc:_openrc:noarch
+  $pkgname-runit:_runit:noarch
+  $pkgname-systemd-compat:_systemd:noarch
+  $pkgname-dinit-compat:_dinit:noarch
+  $pkgname-doc:_doc:noarch
+"
+source="
+  $pkgname-$pkgver.tar.gz
+  litin-init.conf
+"
+builddir="$srcdir/$pkgname-$pkgver"
+
+build() {
+  cd "$builddir"
+  make PREFIX=/usr DESTDIR="$pkgdir" all
+}
+
+check() {
+  cd "$builddir"
+  make spec
+}
+
+package() {
+  cd "$builddir"
+
+  install -d "$pkgdir"/usr/sbin
+  install -d "$pkgdir"/usr/bin
+  install -d "$pkgdir"/etc/litin/services
+  install -d "$pkgdir"/etc/litin/targets/default.wants
+  install -d "$pkgdir"/etc/litin/sockets
+  install -d "$pkgdir"/etc/litin/timers
+  install -d "$pkgdir"/etc/litin/masks
+  install -d "$pkgdir"/etc/litin/env
+  install -d "$pkgdir"/var/log/litin
+  install -d "$pkgdir"/usr/share/litin/examples
+
+  install -m 0755 build/litin-init  "$pkgdir"/sbin/litin-init
+  install -m 0755 build/litind       "$pkgdir"/usr/sbin/litind
+  install -m 0755 build/litinctl     "$pkgdir"/usr/bin/litinctl
+
+  install -m 0644 examples/litin.conf  "$pkgdir"/etc/litin/litin.conf
+  install -m 0644 "$srcdir"/litin-init.conf \
+                  "$pkgdir"/etc/litin/init.conf
+
+  # Example service definitions (documentation-only; not auto-enabled).
+  cp -r examples/services/* "$pkgdir"/usr/share/litin/examples/ 2>/dev/null || true
+  cp -r examples/targets/*  "$pkgdir"/usr/share/litin/examples/ 2>/dev/null || true
+
+  install -m 0644 README.md    "$pkgdir"/usr/share/litin/
+  install -m 0644 MIGRATING.md "$pkgdir"/usr/share/litin/
+}
+
+_openrc() {
+  pkgdesc="OpenRC compatibility shims for Litin (rc-service, rc-update, rc-status)"
+  depends="$pkgname"
+  cd "$builddir"
+  install -d "$subpkgdir"/usr/bin
+  install -m 0755 build/rc-service "$subpkgdir"/usr/bin/rc-service
+  install -m 0755 build/rc-update  "$subpkgdir"/usr/bin/rc-update
+  install -m 0755 build/rc-status  "$subpkgdir"/usr/bin/rc-status
+}
+
+_runit() {
+  pkgdesc="Runit compatibility shims for Litin (sv, runsvdir, chpst)"
+  depends="$pkgname"
+  cd "$builddir"
+  install -d "$subpkgdir"/usr/bin
+  install -m 0755 build/sv        "$subpkgdir"/usr/bin/sv
+  install -m 0755 build/runsvdir  "$subpkgdir"/usr/bin/runsvdir
+  install -m 0755 build/chpst     "$subpkgdir"/usr/bin/chpst
+}
+
+_systemd() {
+  pkgdesc="systemd compatibility shim for Litin (systemctl)"
+  depends="$pkgname"
+  cd "$builddir"
+  install -d "$subpkgdir"/usr/bin
+  install -m 0755 build/systemctl "$subpkgdir"/usr/bin/systemctl
+}
+
+_dinit() {
+  pkgdesc="Dinit compatibility shim for Litin (dinitctl)"
+  depends="$pkgname"
+  cd "$builddir"
+  install -d "$subpkgdir"/usr/bin
+  install -m 0755 build/dinitctl "$subpkgdir"/usr/bin/dinitctl
+}
+
+_doc() {
+  pkgdesc="Documentation for Litin"
+  depends=""
+  mkdir -p "$subpkgdir"/usr/share/doc/litin
+  mv "$pkgdir"/usr/share/litin/*.md "$subpkgdir"/usr/share/doc/litin/ 2>/dev/null || true
+}
+
+sha512sums="
+SKIP  $pkgname-$pkgver.tar.gz
+SKIP  litin-init.conf
+"

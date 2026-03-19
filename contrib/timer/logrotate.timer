@@ -1,0 +1,11 @@
+# /etc/litin/timers/logrotate.timer
+#
+# Daily log rotation trigger.
+# Copy to /etc/litin/timers/logrotate.timer to enable.
+
+description="Daily log rotation"
+service="logrotate"
+on_calendar="daily"
+on_boot_sec="5min"
+persistent="true"
+accuracy_sec="1min"
