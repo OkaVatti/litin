@@ -34,6 +34,7 @@
 # They default to sensible values when absent.
 
 require "../config/service_definition"
+require "../core/libc"
 
 module Litin
   module Service
@@ -212,8 +213,4 @@ module Litin
       property healthcheck_timeout : Int32 = 5
     end
   end
-end
-
-lib LibC
-  fun kill(pid : PidT, sig : Int32) : Int32
 end

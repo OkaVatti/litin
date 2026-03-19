@@ -31,22 +31,23 @@
 #   litin.debug                    verbose kernel messages to console
 
 require "./core/signals"
+require "./core/libc"
 
 # ---------------------------------------------------------------------------
 # Constants — overridable at runtime, not compile time
 # ---------------------------------------------------------------------------
 
-CONF_FILE           = "/etc/litin/init.conf"
-DEFAULT_LITIND_PATH = "/usr/local/sbin/litind"
+CONF_FILE            = "/etc/litin/init.conf"
+DEFAULT_LITIND_PATH  = "/usr/local/sbin/litind"
 DEFAULT_RESCUE_SHELL = "/bin/sh"
-MAX_RESTARTS        = 5
-RESTART_DELAY       = 2.seconds
-LITIND_STOP_TIMEOUT = 30.seconds
+MAX_RESTARTS         = 5
+RESTART_DELAY        = 2.seconds
+LITIND_STOP_TIMEOUT  = 30.seconds
 
 # Global mutable state for the event loop.
-@@litind_path   = DEFAULT_LITIND_PATH
-@@rescue_shell  = DEFAULT_RESCUE_SHELL
-@@single_user   = false
+@@litind_path = DEFAULT_LITIND_PATH
+@@rescue_shell = DEFAULT_RESCUE_SHELL
+@@single_user = false
 
 # ---------------------------------------------------------------------------
 # Main
@@ -75,7 +76,7 @@ def main
   Litin::Signals.setup_pid1(shutdown_ch)
 
   litind_pid = start_litind
-  restarts   = 0
+  restarts = 0
 
   loop do
     reap_zombies
@@ -91,7 +92,7 @@ def main
         if restarts >= MAX_RESTARTS
           STDERR.puts "[litin-init] litind crashed #{restarts} times — rescue shell"
           run_rescue_shell_once
-          restarts = 0        # reset: give litind another chance after rescue
+          restarts = 0 # reset: give litind another chance after rescue
         else
           sleep RESTART_DELAY
         end
@@ -169,11 +170,11 @@ def read_init_conf
     line = raw.strip
     next if line.empty? || line.starts_with?('#')
     next unless m = line.match(SCALAR_RE)
-    key   = m[1]
+    key = m[1]
     value = (m[2]? || m[3]? || m[4]? || "").strip
     case key
-    when "litind_path"   then @@litind_path = value
-    when "rescue_shell"  then @@rescue_shell = value
+    when "litind_path"  then @@litind_path = value
+    when "rescue_shell" then @@rescue_shell = value
     end
   end
 rescue ex
@@ -185,13 +186,13 @@ end
 # ---------------------------------------------------------------------------
 
 MOUNTS = [
-  {fstype: "proc",     source: "proc",     target: "/proc",          flags: 0_u64},
-  {fstype: "sysfs",    source: "sysfs",    target: "/sys",           flags: 0_u64},
-  {fstype: "devtmpfs", source: "devtmpfs", target: "/dev",           flags: 0_u64},
-  {fstype: "devpts",   source: "devpts",   target: "/dev/pts",       flags: 0_u64},
-  {fstype: "tmpfs",    source: "tmpfs",    target: "/dev/shm",       flags: 0_u64},
-  {fstype: "tmpfs",    source: "tmpfs",    target: "/run",           flags: 0_u64},
-  {fstype: "cgroup2",  source: "cgroup2",  target: "/sys/fs/cgroup", flags: 0_u64},
+  {fstype: "proc", source: "proc", target: "/proc", flags: 0_u64},
+  {fstype: "sysfs", source: "sysfs", target: "/sys", flags: 0_u64},
+  {fstype: "devtmpfs", source: "devtmpfs", target: "/dev", flags: 0_u64},
+  {fstype: "devpts", source: "devpts", target: "/dev/pts", flags: 0_u64},
+  {fstype: "tmpfs", source: "tmpfs", target: "/dev/shm", flags: 0_u64},
+  {fstype: "tmpfs", source: "tmpfs", target: "/run", flags: 0_u64},
+  {fstype: "cgroup2", source: "cgroup2", target: "/sys/fs/cgroup", flags: 0_u64},
 ]
 
 def mount_essential_filesystems
@@ -233,8 +234,8 @@ end
 # ---------------------------------------------------------------------------
 
 def setup_environment
-  ENV["PATH"]  ||= "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-  ENV["TERM"]  ||= "linux"
+  ENV["PATH"] ||= "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+  ENV["TERM"] ||= "linux"
   ENV["SHELL"] ||= @@rescue_shell
 end
 
@@ -255,9 +256,9 @@ def start_litind : Int32
   end
   process = Process.new(
     command: @@litind_path,
-    input:   Process::Redirect::Close,
-    output:  Process::Redirect::Inherit,
-    error:   Process::Redirect::Inherit
+    input: Process::Redirect::Close,
+    output: Process::Redirect::Inherit,
+    error: Process::Redirect::Inherit
   )
   STDOUT.puts "[litin-init] litind started (pid=#{process.pid})"
   process.pid
@@ -274,9 +275,9 @@ def run_rescue_shell_once : Nil
   STDOUT.puts "[litin-init] spawning rescue shell (#{@@rescue_shell})"
   proc = Process.new(
     command: @@rescue_shell,
-    input:   Process::Redirect::Inherit,
-    output:  Process::Redirect::Inherit,
-    error:   Process::Redirect::Inherit
+    input: Process::Redirect::Inherit,
+    output: Process::Redirect::Inherit,
+    error: Process::Redirect::Inherit
   )
   proc.wait
   STDOUT.puts "[litin-init] rescue shell exited"
@@ -341,28 +342,6 @@ def perform_shutdown(litind_pid : Int32, reason : Litin::Signals::ShutdownReason
     STDOUT.puts "[litin-init] halting"
     LibC.reboot(LibC::LINUX_REBOOT_CMD_HALT)
   end
-end
-
-# ---------------------------------------------------------------------------
-# LibC bindings
-# ---------------------------------------------------------------------------
-
-lib LibC
-  WNOHANG = 1
-
-  LINUX_REBOOT_CMD_RESTART   = 0x01234567_u32
-  LINUX_REBOOT_CMD_HALT      = 0xcdef0123_u32
-  LINUX_REBOOT_CMD_POWER_OFF = 0x4321fedc_u32
-
-  O_RDWR = 2
-
-  fun waitpid(pid : PidT, status : Int32*, options : Int32) : PidT
-  fun mount(source : Char*, target : Char*, fstype : Char*, flags : UInt64, data : Void*) : Int32
-  fun sethostname(name : Char*, len : SizeT) : Int32
-  fun reboot(cmd : UInt32) : Int32
-  fun close(fd : Int32) : Int32
-  fun open(path : Char*, flags : Int32, mode : ModeT) : Int32
-  fun dup2(oldfd : Int32, newfd : Int32) : Int32
 end
 
 main

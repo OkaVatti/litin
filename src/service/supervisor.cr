@@ -28,6 +28,7 @@ require "../cgroup/manager"
 require "../log/capture"
 require "../util/env_dir"
 require "./healthcheck"
+require "../core/libc"
 
 module Litin
   module Service
@@ -478,9 +479,4 @@ module Litin
       end
     end
   end
-end
-
-lib LibC
-  WNOHANG = 1
-  fun waitpid(pid : PidT, status : Int32*, options : Int32) : PidT
 end
