@@ -1,0 +1,22 @@
+name: Crystal CI
+
+on:
+  push:
+    branches: [ "mother" ]
+  pull_request:
+    branches: [ "mother" ]
+
+jobs:
+  build:
+
+    runs-on: alpine-latest
+
+    container:
+      image: crystallang/crystal
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Install dependencies
+      run: shards install
+    - name: Run tests
+      run: crystal spec ./spec --order random
