@@ -4,13 +4,13 @@ require "spec"
 require "../../src/log/capture"
 
 module Litin::Log
-  describe LogManager do
-    def temp_manager : {LogManager, String}
-      dir = File.tempname("litin-log-test")
-      Dir.mkdir(dir)
-      {LogManager.new(dir), dir}
-    end
+  private def self.temp_manager : {LogManager, String}
+    dir = File.tempname("litin-log-test")
+    Dir.mkdir(dir)
+    {LogManager.new(dir), dir}
+  end
 
+  describe LogManager do
     it "creates log file on first write" do
       mgr, dir = temp_manager
       begin
@@ -123,7 +123,6 @@ module Litin::Log
         writer.close
 
         content = File.read(log_path)
-        # Should start with a timestamp like 2025-...
         content.should match(/^\d{4}-\d{2}-\d{2}T/)
         content.should contain("hello world")
       ensure

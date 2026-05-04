@@ -198,8 +198,6 @@ module Litin
         found_state = "unknown"
         client.request("status", [name], {} of String => String) do |resp|
           if resp.ok && !resp.payload.empty?
-            parts = resp.payload.split
-            # Status line: "name: state ..."
             state_part = resp.payload.split(": ", 2)[1]?.to_s.split.first?
             found_state = state_part || "unknown"
           end
@@ -259,9 +257,11 @@ module Litin
         exit_code
       end
 
+      # Strip common systemd unit suffixes. Use String#chomp which removes
+      # a specific suffix (unlike String#rstrip which strips characters).
       private def self.strip_unit_suffix(name : String) : String
         %w[.service .socket .timer .target .mount .path].each do |suffix|
-          return name.rstrip(suffix) if name.ends_with?(suffix)
+          return name.chomp(suffix) if name.ends_with?(suffix)
         end
         name
       end

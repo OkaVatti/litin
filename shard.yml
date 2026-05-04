@@ -10,7 +10,7 @@ description: >
 authors:
   - OkaVatti <okavatti@proton.me>
 
-crystal: ">= 1.19.1"
+crystal: ">= 1.20.1"
 
 license: MIT
 

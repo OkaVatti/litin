@@ -1,292 +1,59 @@
-# src/socket/activation.cr
+# src/util/fs.cr
 #
-# Socket activation for Litin.
+# Filesystem utilities for Litin.
 #
-# Implements the sd_listen_fds(3) protocol so that services written
-# for systemd socket activation work unmodified under Litin.
-#
-# Protocol summary:
-#   - litind creates and binds sockets defined in socket unit files.
-#   - When a connection arrives, litind starts the associated service
-#     (if not already running) and passes the socket FD(s) to it via
-#     inheritance plus the environment variables:
-#       LISTEN_PID=<pid>          PID of the service process
-#       LISTEN_FDS=<n>            number of FDs passed, starting at FD 3
-#       LISTEN_FDNAMES=<n1:n2:..> colon-separated socket names
-#   - The service calls sd_listen_fds() (or reads the env vars directly)
-#     to know how many FDs to expect and at which file descriptor number.
-#
-# Socket unit file format (parsed here):
-#   listen="0.0.0.0:22"          TCP address:port
-#   listen="unix:/run/foo.sock"   UNIX domain socket
-#   service="sshd"                which service to activate
-#   accept="no"                   if "yes", fork one instance per connection
-#   backlog="128"
-#   socket_user="root"
-#   socket_group="root"
-#   socket_mode="0660"
+# Provides atomic file writes, PID file read/write, directory
+# creation with a given mode, and stale socket removal.
 
-require "../core/ipc"
 require "../core/libc"
 
 module Litin
-  module Socket
-    # Parsed socket unit definition.
-    class SocketUnit
-      property name : String = ""
-      property listen : String = ""  # "host:port" or "unix:/path"
-      property service : String = "" # associated service name
-      property accept : Bool = false # one instance per connection?
-      property backlog : Int32 = 128
-      property socket_user : String = "root"
-      property socket_group : String = "root"
-      property socket_mode : Int32 = 0o660
-      property source_path : String = ""
+  module Util
+    module FS
+      # Write `content` to `path` atomically via a temp file + rename.
+      # Creates parent directories as needed.
+      def self.atomic_write(path : String, content : String, mode : Int32 = 0o644) : Nil
+        dir = File.dirname(path)
+        Dir.mkdir_p(dir) unless Dir.exists?(dir)
 
-      def unix? : Bool
-        listen.starts_with?("unix:")
+        tmp = "#{path}.tmp.#{Process.pid}"
+        File.write(tmp, content)
+        File.chmod(tmp, mode)
+        File.rename(tmp, path)
+      rescue ex
+        File.delete(tmp) rescue nil if tmp
+        raise ex
       end
 
-      def unix_path : String
-        listen.lchop("unix:")
+      # Write the current PID (or `pid`) to `path`.
+      def self.write_pid(path : String, pid : Int32 = Process.pid) : Nil
+        atomic_write(path, "#{pid}\n", 0o644)
       end
 
-      def tcp_address : String
-        listen.rpartition(':')[0]
+      # Read the PID stored in `path`. Returns nil if the file does not
+      # exist or does not contain a valid integer.
+      def self.read_pid(path : String) : Int32?
+        return nil unless File.exists?(path)
+        File.read(path).strip.to_i?
+      rescue
+        nil
       end
 
-      def tcp_port : Int32
-        listen.rpartition(':')[2].to_i? || 0
-      end
-    end
-
-    # ---------------------------------------------------------------------------
-    # Socket unit parser
-    # ---------------------------------------------------------------------------
-
-    class SocketParser
-      SOCKETS_DIR = "/etc/litin/sockets"
-
-      SCALAR_RE = /^[ \t]*([A-Za-z_][A-Za-z0-9_]*)[ \t]*=[ \t]*(?:"([^"\\]*)"|'([^'\\]*)'|([^\s#]+))/
-
-      def self.load_all(dir : String = SOCKETS_DIR) : Array(SocketUnit)
-        result = [] of SocketUnit
-        return result unless Dir.exists?(dir)
-
-        Dir.each_child(dir) do |entry|
-          next unless entry.ends_with?(".socket")
-          path = File.join(dir, entry)
-          begin
-            unit = parse_file(path)
-            unit.name = entry.rstrip(".socket") if unit.name.empty?
-            result << unit
-          rescue ex
-            STDERR.puts "[socket parser] skipping #{path}: #{ex.message}"
-          end
-        end
-
-        result
+      # Create `path` as a directory with the given octal `mode`.
+      # Does not raise if the directory already exists.
+      def self.ensure_dir(path : String, mode : Int32 = 0o755) : Nil
+        Dir.mkdir_p(path)
+        File.chmod(path, mode)
+      rescue ex : File::AlreadyExistsError
+        # Already exists — that is acceptable.
       end
 
-      def self.parse_file(path : String) : SocketUnit
-        unit = SocketUnit.new
-        unit.source_path = path
-
-        File.each_line(path) do |raw_line|
-          line = raw_line.strip
-          next if line.empty? || line.starts_with?('#')
-
-          if m = line.match(SCALAR_RE)
-            key = m[1]
-            value = (m[2]? || m[3]? || m[4]? || "").strip
-
-            case key
-            when "listen"       then unit.listen = value
-            when "service"      then unit.service = value
-            when "accept"       then unit.accept = (value == "yes" || value == "true")
-            when "backlog"      then unit.backlog = value.to_i? || 128
-            when "socket_user"  then unit.socket_user = value
-            when "socket_group" then unit.socket_group = value
-            when "socket_mode"  then unit.socket_mode = value.to_i(8) rescue 0o660
-            when "name"         then unit.name = value
-            end
-          end
-        end
-
-        raise "socket unit #{path}: missing 'listen' field" if unit.listen.empty?
-        raise "socket unit #{path}: missing 'service' field" if unit.service.empty?
-
-        unit
+      # Remove a stale UNIX socket file at `path` if it exists.
+      # Never raises.
+      def self.remove_stale_socket(path : String) : Nil
+        File.delete(path) if File.exists?(path)
+      rescue
       end
-    end
-
-    # ---------------------------------------------------------------------------
-    # Active socket binding
-    # ---------------------------------------------------------------------------
-
-    # Represents a bound, listening socket owned by litind.
-    class BoundSocket
-      getter unit : SocketUnit
-      getter fd : Int32
-      getter raw : IO::FileDescriptor
-
-      def initialize(@unit, @raw)
-        @fd = @raw.fd
-      end
-
-      def close
-        @raw.close rescue nil
-      end
-    end
-
-    # ---------------------------------------------------------------------------
-    # Socket Manager — owned by litind
-    # ---------------------------------------------------------------------------
-
-    # Callback type: called when a socket receives a connection.
-    # The manager passes the service name and the bound socket.
-    alias ActivationCallback = Proc(String, BoundSocket, Nil)
-
-    class Manager
-      def initialize(@on_activate : ActivationCallback)
-        @sockets = [] of BoundSocket
-        @watching = false
-      end
-
-      # Bind all sockets from loaded socket units.
-      def bind_all(units : Array(SocketUnit)) : Nil
-        units.each do |unit|
-          begin
-            bs = bind_unit(unit)
-            @sockets << bs
-            STDOUT.puts "[socket] bound #{unit.name}: #{unit.listen}"
-          rescue ex
-            STDERR.puts "[socket] failed to bind #{unit.name} (#{unit.listen}): #{ex.message}"
-          end
-        end
-      end
-
-      # Start the accept loop in a fiber per socket.
-      def start_listening : Nil
-        @sockets.each do |bs|
-          spawn { accept_loop(bs) }
-        end
-      end
-
-      # Return the list of bound sockets for a given service name.
-      # Used when assembling the FD set to pass to the service process.
-      def sockets_for(service_name : String) : Array(BoundSocket)
-        @sockets.select { |bs| bs.unit.service == service_name }
-      end
-
-      # Close and remove all sockets for a service (on service removal).
-      def close_for(service_name : String) : Nil
-        @sockets.select! do |bs|
-          if bs.unit.service == service_name
-            bs.close
-            false
-          else
-            true
-          end
-        end
-      end
-
-      def all_units : Array(SocketUnit)
-        @sockets.map(&.unit)
-      end
-
-      # ---------------------------------------------------------------------------
-      # Private helpers
-      # ---------------------------------------------------------------------------
-
-      private def bind_unit(unit : SocketUnit) : BoundSocket
-        if unit.unix?
-          bind_unix(unit)
-        else
-          bind_tcp(unit)
-        end
-      end
-
-      private def bind_unix(unit : SocketUnit) : BoundSocket
-        path = unit.unix_path
-        File.delete(path) rescue nil
-        Dir.mkdir_p(File.dirname(path))
-
-        server = UNIXServer.new(path)
-        File.chmod(path, unit.socket_mode)
-        BoundSocket.new(unit, server)
-      end
-
-      private def bind_tcp(unit : SocketUnit) : BoundSocket
-        addr = unit.tcp_address
-        port = unit.tcp_port
-        raise "invalid port in socket unit #{unit.name}" if port == 0
-
-        server = TCPServer.new(addr, port, backlog: unit.backlog)
-        server.reuse_address = true
-        BoundSocket.new(unit, server)
-      end
-
-      private def accept_loop(bs : BoundSocket) : Nil
-        loop do
-          begin
-            # Peek at the socket to detect an incoming connection.
-            # We do not actually accept here — litind accepts and passes the
-            # socket to the service.
-            raw_io = bs.raw
-
-            case raw_io
-            when UNIXServer
-              conn = raw_io.accept?
-              if conn
-                conn.close rescue nil # We only needed the wake-up.
-                @on_activate.call(bs.unit.service, bs)
-              end
-            when TCPServer
-              conn = raw_io.accept?
-              if conn
-                conn.close rescue nil
-                @on_activate.call(bs.unit.service, bs)
-              end
-            end
-          rescue ex : IO::Error
-            # Socket may have been closed during shutdown.
-            break
-          rescue ex
-            STDERR.puts "[socket:#{bs.unit.name}] accept error: #{ex.message}"
-            sleep 1.second
-          end
-        end
-      end
-    end
-
-    # ---------------------------------------------------------------------------
-    # FD passing — build the environment variables for sd_listen_fds protocol
-    # ---------------------------------------------------------------------------
-
-    # Returns the environment variables to inject into a service process
-    # so it can find its inherited socket FDs.
-    #
-    # The FDs themselves must be passed via Process heredity (not closed
-    # with FD_CLOEXEC). Crystal's Process.new does not expose fine-grained
-    # FD inheritance control, so we use a helper that writes the FD numbers
-    # to the env and clears FD_CLOEXEC on each FD before exec.
-    def self.build_listen_env(
-      pid : Int32,
-      sockets : Array(BoundSocket),
-    ) : Hash(String, String)
-      env = {} of String => String
-      env["LISTEN_PID"] = pid.to_s
-      env["LISTEN_FDS"] = sockets.size.to_s
-      env["LISTEN_FDNAMES"] = sockets.map(&.unit.name).join(":")
-      env
-    end
-
-    # Clear FD_CLOEXEC on a file descriptor so it survives exec.
-    def self.clear_cloexec(fd : Int32) : Nil
-      flags = LibC.fcntl(fd, LibC::F_GETFD, 0)
-      return if flags < 0
-      LibC.fcntl(fd, LibC::F_SETFD, flags & ~LibC::FD_CLOEXEC)
     end
   end
 end

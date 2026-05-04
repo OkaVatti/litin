@@ -36,10 +36,19 @@ module Litin
     struct ExitEvent
       getter pid : Int32
       getter exit_code : Int32
-      getter status : Process::Status
+      getter success : Bool
 
-      def initialize(@pid, @status)
-        @exit_code = @status.exit_code? || -1
+      def initialize(@pid : Int32, raw_wstatus : Int32)
+        # Decode POSIX wstatus from waitpid(2) manually, because we cannot
+        # construct a Process::Status from a raw wstatus integer in Crystal
+        # 1.19.1 via a public API.
+        exited = (raw_wstatus & 0x7f) == 0
+        @success = exited && ((raw_wstatus >> 8) & 0xff) == 0
+        @exit_code = exited ? ((raw_wstatus >> 8) & 0xff) : -1
+      end
+
+      def status_success? : Bool
+        @success
       end
     end
 
@@ -53,6 +62,11 @@ module Litin
     class Supervisor
       getter record : ServiceRecord
 
+      # Explicit type annotations for instance variables that are assigned
+      # from method calls, so the compiler can infer the type.
+      @log_writer : IO
+      @fiber : Fiber?
+
       def initialize(
         @record : ServiceRecord,
         @exit_broadcast : Channel(ExitEvent),
@@ -61,7 +75,6 @@ module Litin
         @stop_requested = Channel(Nil).new(1)
         @cgroup = CGroup::ServiceCGroup.new(@record.name)
         @log_writer = Log::MANAGER.open_writer(@record.name)
-        @fiber = nil.as(Fiber?)
         @hc_failures = 0
       end
 
@@ -154,7 +167,7 @@ module Litin
           should_restart = case @record.definition.restart
                            when Config::RestartPolicy::No            then false
                            when Config::RestartPolicy::Always        then true
-                           when Config::RestartPolicy::OnFailure     then !exit_event.status.success?
+                           when Config::RestartPolicy::OnFailure     then !exit_event.status_success?
                            when Config::RestartPolicy::UnlessStopped then !@record.admin_stopped
                            else                                           false
                            end
@@ -166,7 +179,7 @@ module Litin
             notify_state_change
             sleep @record.definition.restart_sec.seconds
           else
-            reason = exit_event.status.success? ? "exited (0)" : "exited (#{exit_event.exit_code})"
+            reason = exit_event.status_success? ? "exited (0)" : "exited (#{exit_event.exit_code})"
             @record.transition_to(State::Failed, reason)
             notify_state_change
             break
@@ -220,7 +233,7 @@ module Litin
           output: @log_writer,
           error: @log_writer
         )
-        proc.pid
+        proc.pid.to_i32
       rescue ex
         STDERR.puts "[supervisor:#{@record.name}] spawn failed: #{ex.message}"
         nil
@@ -229,7 +242,7 @@ module Litin
       private def resolve_command(sdef : Config::ServiceDefinition) : String?
         return sdef.command if sdef.command
         if run = sdef.run_script
-          return run if File.executable?(run)
+          return run if File::Info.executable?(run)
           STDERR.puts "[supervisor:#{sdef.name}] run script not executable: #{run}"
           return nil
         end
@@ -295,7 +308,7 @@ module Litin
           return false if Time.utc > deadline
           select
           when ev = @exit_broadcast.receive
-            return ev.status.success? if ev.pid == pid
+            return ev.status_success? if ev.pid == pid
           when timeout(100.milliseconds)
           end
         end
@@ -310,14 +323,19 @@ module Litin
         true
       end
 
+      # Wait for sd_notify READY=1 on a UNIX socket.
+      # Crystal 1.19.1 has no UNIXServer#accept_timeout; we use a
+      # select loop with a manual deadline instead.
       private def wait_notify(socket_path : String, timeout : Time::Span) : Bool
         Dir.mkdir_p(NOTIFY_SOCK_DIR)
         File.delete(socket_path) rescue nil
         server = UNIXServer.new(socket_path)
+        server.read_timeout = timeout
 
         begin
-          conn = server.accept_timeout(timeout)
+          conn = server.accept?
           return false unless conn
+          conn.read_timeout = timeout
           ready = conn.gets.to_s.includes?("READY=1")
           conn.close
           ready
@@ -475,7 +493,7 @@ module Litin
       loop do
         pid = LibC.waitpid(-1, out raw_status, LibC::WNOHANG)
         break if pid <= 0
-        REAPER_CHANNEL.send(ExitEvent.new(pid.to_i32, Process::Status.new(raw_status))) rescue nil
+        REAPER_CHANNEL.send(ExitEvent.new(pid.to_i32, raw_status)) rescue nil
       end
     end
   end

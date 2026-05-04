@@ -4,22 +4,22 @@ require "spec"
 require "../../src/config/service_definition"
 
 module Litin::Config
-  describe ServiceDefinition do
-    def fresh(name : String = "testsvc") : ServiceDefinition
-      s = ServiceDefinition.new
-      s.name = name
-      s.command = "/usr/bin/test"
-      s
-    end
+  # Helper at module level — Crystal does not allow def inside describe blocks.
+  private def self.fresh_sdef(name : String = "testsvc") : ServiceDefinition
+    s = ServiceDefinition.new
+    s.name = name
+    s.command = "/usr/bin/test"
+    s
+  end
 
+  describe ServiceDefinition do
     # -------------------------------------------------------------------------
     # validate
     # -------------------------------------------------------------------------
 
     describe "#validate" do
       it "returns empty array for a minimal valid definition" do
-        s = fresh
-        s.validate.should be_empty
+        fresh_sdef.validate.should be_empty
       end
 
       it "errors when name is empty" do
@@ -36,40 +36,39 @@ module Litin::Config
       end
 
       it "errors when type=forking and pid_file is nil" do
-        s = fresh
+        s = fresh_sdef
         s.type = ServiceType::Forking
-        # pid_file defaults to nil
         s.validate.any? { |e| e.includes?("pid_file") }.should be_true
       end
 
       it "passes for forking with pid_file set" do
-        s = fresh
+        s = fresh_sdef
         s.type = ServiceType::Forking
         s.pid_file = "/run/test.pid"
         s.validate.should be_empty
       end
 
       it "errors when restart_sec is negative" do
-        s = fresh
+        s = fresh_sdef
         s.restart_sec = -1
         s.validate.any? { |e| e.includes?("restart_sec") }.should be_true
       end
 
       it "errors when timeout_start is zero" do
-        s = fresh
+        s = fresh_sdef
         s.timeout_start = 0
         s.validate.any? { |e| e.includes?("timeout_start") }.should be_true
       end
 
       it "errors for http healthcheck without url" do
-        s = fresh
+        s = fresh_sdef
         s.healthcheck_type = "http"
         s.healthcheck_http_url = nil
         s.validate.any? { |e| e.includes?("healthcheck_http_url") }.should be_true
       end
 
       it "errors for tcp healthcheck with port 0" do
-        s = fresh
+        s = fresh_sdef
         s.healthcheck_type = "tcp"
         s.healthcheck_tcp_port = 0
         s.validate.any? { |e| e.includes?("healthcheck_tcp_port") }.should be_true
@@ -78,7 +77,7 @@ module Litin::Config
 
     describe "#valid?" do
       it "returns true for a valid definition" do
-        fresh.valid?.should be_true
+        fresh_sdef.valid?.should be_true
       end
 
       it "returns false for an invalid definition" do
@@ -93,7 +92,7 @@ module Litin::Config
 
     describe "#requires" do
       it "returns names from Require dependencies only" do
-        s = fresh
+        s = fresh_sdef
         s.dependencies << Dependency.new(Dependency::Kind::Require, ["network", "localfs"])
         s.dependencies << Dependency.new(Dependency::Kind::Want, ["logger"])
         s.dependencies << Dependency.new(Dependency::Kind::After, ["boot"])
@@ -101,13 +100,13 @@ module Litin::Config
       end
 
       it "returns empty when no hard deps" do
-        fresh.requires.should be_empty
+        fresh_sdef.requires.should be_empty
       end
     end
 
     describe "#after_names" do
       it "includes require, want, and after deps" do
-        s = fresh
+        s = fresh_sdef
         s.dependencies << Dependency.new(Dependency::Kind::Require, ["a"])
         s.dependencies << Dependency.new(Dependency::Kind::Want, ["b"])
         s.dependencies << Dependency.new(Dependency::Kind::After, ["c"])
@@ -122,7 +121,7 @@ module Litin::Config
 
     describe "#before_names" do
       it "returns only Before dep targets" do
-        s = fresh
+        s = fresh_sdef
         s.dependencies << Dependency.new(Dependency::Kind::Before, ["nginx"])
         s.dependencies << Dependency.new(Dependency::Kind::Require, ["boot"])
         s.before_names.should eq(["nginx"])
@@ -131,7 +130,7 @@ module Litin::Config
 
     describe "#conflicts_with" do
       it "returns names from Conflicts deps" do
-        s = fresh
+        s = fresh_sdef
         s.dependencies << Dependency.new(Dependency::Kind::Conflicts, ["dropbear"])
         s.conflicts_with.should eq(["dropbear"])
       end
@@ -165,7 +164,7 @@ module Litin::Config
 
     describe "#to_s" do
       it "includes name, type, and restart policy" do
-        s = fresh("myapp")
+        s = fresh_sdef("myapp")
         s.type = ServiceType::Forking
         s.restart = RestartPolicy::Always
         str = s.to_s

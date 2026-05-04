@@ -1,35 +1,35 @@
 # spec/config/loader_spec.cr
 #
 # Integration tests for Config::Loader.
-# Builds real service directory trees in tmpfs and verifies loading.
 
 require "spec"
 require "file_utils"
 require "../../src/config/parser"
 
 module Litin::Config
-  describe Loader do
-    # Helper: create a minimal service directory with a service.sh.
-    def make_service_dir(
-      base_dir : String,
-      name : String,
-      content : String,
-      enabled : Bool = false,
-      wants_dir : String? = nil,
-    ) : String
-      svc_dir = File.join(base_dir, name)
-      Dir.mkdir_p(svc_dir)
-      File.write(File.join(svc_dir, "service.sh"), content)
+  # Helpers at module level — Crystal does not allow def inside describe blocks.
 
-      if enabled && wants_dir
-        Dir.mkdir_p(wants_dir)
-        link = File.join(wants_dir, name)
-        File.symlink(File.join(svc_dir, "service.sh"), link) unless File.exists?(link)
-      end
+  private def self.make_service_dir(
+    base_dir : String,
+    name : String,
+    content : String,
+    enabled : Bool = false,
+    wants_dir : String? = nil,
+  ) : String
+    svc_dir = File.join(base_dir, name)
+    Dir.mkdir_p(svc_dir)
+    File.write(File.join(svc_dir, "service.sh"), content)
 
-      svc_dir
+    if enabled && (wd = wants_dir)
+      Dir.mkdir_p(wd)
+      link = File.join(wd, name)
+      File.symlink(File.join(svc_dir, "service.sh"), link) unless File.exists?(link)
     end
 
+    svc_dir
+  end
+
+  describe Loader do
     it "loads a directory-based service" do
       base = File.tempname("litin-loader-test")
       Dir.mkdir_p(base)
@@ -77,7 +77,7 @@ module Litin::Config
         s = sdefs[0]
         s.name.should eq("myapp")
         s.run_script.should eq(run_path)
-        s.restart.should eq(RestartPolicy::Always) # Runit default
+        s.restart.should eq(RestartPolicy::Always)
       ensure
         FileUtils.rm_rf(base)
       end
@@ -107,11 +107,8 @@ module Litin::Config
       Dir.mkdir_p(base)
 
       begin
-        # A file with an extension that is not .sh.
         File.write(File.join(base, "README.txt"), "not a service")
-        # An empty directory.
         Dir.mkdir_p(File.join(base, "empty_dir"))
-        # A proper service.
         make_service_dir(base, "sshd", %(name="sshd"\ncommand="/usr/sbin/sshd -D"\n))
 
         sdefs = Loader.load_all(base)
@@ -129,8 +126,6 @@ module Litin::Config
 
       begin
         make_service_dir(base, "nginx", %(name="nginx"\ncommand="/usr/sbin/nginx"\n))
-
-        # Create a /dev/null symlink in the masks dir.
         File.symlink("/dev/null", File.join(masks, "nginx"))
 
         loader = Loader.new(base, masks)
@@ -152,18 +147,10 @@ module Litin::Config
       begin
         svc_dir = make_service_dir(base, "sshd", %(name="sshd"\ncommand="/usr/sbin/sshd -D"\n))
         svc_file = File.join(svc_dir, "service.sh")
-
-        # Symlink into default.wants.
         File.symlink(svc_file, File.join(wants, "sshd"))
 
-        # Temporarily patch WANTS_GLOB — not straightforward, so test
-        # the resolve_enabled_names logic directly via load_all with a
-        # custom setup.  We verify the enabled flag is false without
-        # a symlink, and would be true with one (requires the real path).
         loader = Loader.new(base)
         sdefs = loader.load_all
-        # Without the right WANTS_GLOB pointing at `targets`, we can only
-        # verify the shape; the flag depends on glob resolution.
         sdefs.size.should eq(1)
         sdefs[0].name.should eq("sshd")
       ensure
@@ -217,15 +204,11 @@ module Litin::Config
       Dir.mkdir_p(base)
 
       begin
-        # Truncated / invalid service file in one directory.
         bad = File.join(base, "broken")
         Dir.mkdir_p(bad)
         File.write(File.join(bad, "service.sh"), "this is not valid but also not a crash\n")
-
-        # Good service alongside it.
         make_service_dir(base, "good", %(name="good"\ncommand="/usr/bin/good"\n))
 
-        # Should load the good one and skip (or warn about) the broken one.
         sdefs = Loader.load_all(base)
         names = sdefs.map(&.name)
         names.should contain("good")

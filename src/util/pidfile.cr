@@ -9,11 +9,9 @@
 #   stale? — the file exists but the process is dead
 #   clean  — remove a stale PID file safely
 #   lock   — combine write + alive? to implement a simple exclusive lock
-#
-# All operations are safe to call when the file does not exist (they
-# return nil/false rather than raising).
 
 require "./fs"
+require "../core/libc"
 
 module Litin
   module Util
@@ -23,19 +21,10 @@ module Litin
       def initialize(@path : String)
       end
 
-      # -----------------------------------------------------------------------
-      # Write
-      # -----------------------------------------------------------------------
-
       # Write `pid` (default: current process PID) to the file atomically.
-      # Creates parent directories as needed.
       def write(pid : Int32 = Process.pid) : Nil
         FS.atomic_write(@path, "#{pid}\n", 0o644)
       end
-
-      # -----------------------------------------------------------------------
-      # Read
-      # -----------------------------------------------------------------------
 
       # Return the PID stored in the file, or nil.
       def read : Int32?
@@ -44,10 +33,6 @@ module Litin
       rescue
         nil
       end
-
-      # -----------------------------------------------------------------------
-      # Liveness checks
-      # -----------------------------------------------------------------------
 
       # Return true if the file exists and the stored PID names a live process.
       def alive? : Bool
@@ -64,47 +49,31 @@ module Litin
         !alive?
       end
 
-      # -----------------------------------------------------------------------
-      # Cleanup
-      # -----------------------------------------------------------------------
-
-      # Remove the PID file if it exists.
-      # Never raises.
+      # Remove the PID file if it exists. Never raises.
       def clean : Nil
         File.delete(@path) if File.exists?(@path)
       rescue
       end
 
-      # Remove the PID file only if it is stale (the process is dead).
       def clean_stale : Nil
         clean if stale?
       end
 
-      # -----------------------------------------------------------------------
-      # Locking
-      # -----------------------------------------------------------------------
-
       # Try to acquire an exclusive lock using the PID file.
-      # Returns true if this process successfully wrote its PID (no other
-      # live process holds the lock).
-      # Returns false if another process is already holding the lock.
       def try_lock : Bool
         return false if alive?
         write
-        # Double-check: re-read to guard against a race where two processes
-        # both observe the file as absent and then both write.
         sleep 5.milliseconds
         read == Process.pid
       end
 
       def unlock : Nil
-        # Only remove the file if it currently contains our PID.
         clean if read == Process.pid
       end
 
-      # -----------------------------------------------------------------------
-      # Convenience: class-level helpers
-      # -----------------------------------------------------------------------
+      # ---------------------------------------------------------------------------
+      # Class-level convenience helpers
+      # ---------------------------------------------------------------------------
 
       def self.write(path : String, pid : Int32 = Process.pid) : Nil
         new(path).write(pid)
@@ -123,8 +92,4 @@ module Litin
       end
     end
   end
-end
-
-lib LibC
-  fun kill(pid : PidT, sig : Int32) : Int32
 end

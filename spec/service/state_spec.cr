@@ -5,13 +5,13 @@ require "../../src/config/service_definition"
 require "../../src/service/state"
 
 module Litin::Service
-  describe ServiceRecord do
-    def make_record(name : String = "test") : ServiceRecord
-      sdef = Config::ServiceDefinition.new
-      sdef.name = name
-      ServiceRecord.new(name, sdef)
-    end
+  private def self.make_record(name : String = "test") : ServiceRecord
+    sdef = Config::ServiceDefinition.new
+    sdef.name = name
+    ServiceRecord.new(name, sdef)
+  end
 
+  describe ServiceRecord do
     it "starts in inactive state" do
       rec = make_record
       rec.state.should eq(State::Inactive)

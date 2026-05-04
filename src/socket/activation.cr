@@ -78,7 +78,8 @@ module Litin
           path = File.join(dir, entry)
           begin
             unit = parse_file(path)
-            unit.name = entry.rstrip(".socket") if unit.name.empty?
+            # Use String#chomp to strip a specific suffix (not #rstrip which strips chars).
+            unit.name = entry.chomp(".socket") if unit.name.empty?
             result << unit
           rescue ex
             STDERR.puts "[socket parser] skipping #{path}: #{ex.message}"
@@ -128,9 +129,10 @@ module Litin
     class BoundSocket
       getter unit : SocketUnit
       getter fd : Int32
-      getter raw : IO::FileDescriptor
+      # raw can be a UNIX or TCP server – both have an `fd` method.
+      getter raw : UNIXServer | TCPServer
 
-      def initialize(@unit, @raw)
+      def initialize(@unit, @raw : UNIXServer | TCPServer)
         @fd = @raw.fd
       end
 
@@ -144,16 +146,13 @@ module Litin
     # ---------------------------------------------------------------------------
 
     # Callback type: called when a socket receives a connection.
-    # The manager passes the service name and the bound socket.
     alias ActivationCallback = Proc(String, BoundSocket, Nil)
 
     class Manager
       def initialize(@on_activate : ActivationCallback)
         @sockets = [] of BoundSocket
-        @watching = false
       end
 
-      # Bind all sockets from loaded socket units.
       def bind_all(units : Array(SocketUnit)) : Nil
         units.each do |unit|
           begin
@@ -166,20 +165,16 @@ module Litin
         end
       end
 
-      # Start the accept loop in a fiber per socket.
       def start_listening : Nil
         @sockets.each do |bs|
           spawn { accept_loop(bs) }
         end
       end
 
-      # Return the list of bound sockets for a given service name.
-      # Used when assembling the FD set to pass to the service process.
       def sockets_for(service_name : String) : Array(BoundSocket)
         @sockets.select { |bs| bs.unit.service == service_name }
       end
 
-      # Close and remove all sockets for a service (on service removal).
       def close_for(service_name : String) : Nil
         @sockets.select! do |bs|
           if bs.unit.service == service_name
@@ -195,23 +190,14 @@ module Litin
         @sockets.map(&.unit)
       end
 
-      # ---------------------------------------------------------------------------
-      # Private helpers
-      # ---------------------------------------------------------------------------
-
       private def bind_unit(unit : SocketUnit) : BoundSocket
-        if unit.unix?
-          bind_unix(unit)
-        else
-          bind_tcp(unit)
-        end
+        unit.unix? ? bind_unix(unit) : bind_tcp(unit)
       end
 
       private def bind_unix(unit : SocketUnit) : BoundSocket
         path = unit.unix_path
         File.delete(path) rescue nil
         Dir.mkdir_p(File.dirname(path))
-
         server = UNIXServer.new(path)
         File.chmod(path, unit.socket_mode)
         BoundSocket.new(unit, server)
@@ -221,7 +207,6 @@ module Litin
         addr = unit.tcp_address
         port = unit.tcp_port
         raise "invalid port in socket unit #{unit.name}" if port == 0
-
         server = TCPServer.new(addr, port, backlog: unit.backlog)
         server.reuse_address = true
         BoundSocket.new(unit, server)
@@ -229,33 +214,27 @@ module Litin
 
       private def accept_loop(bs : BoundSocket) : Nil
         loop do
-          begin
-            # Peek at the socket to detect an incoming connection.
-            # We do not actually accept here — litind accepts and passes the
-            # socket to the service.
-            raw_io = bs.raw
+          raw_io = bs.raw
 
-            case raw_io
-            when UNIXServer
-              conn = raw_io.accept?
-              if conn
-                conn.close rescue nil # We only needed the wake-up.
-                @on_activate.call(bs.unit.service, bs)
-              end
-            when TCPServer
-              conn = raw_io.accept?
-              if conn
-                conn.close rescue nil
-                @on_activate.call(bs.unit.service, bs)
-              end
+          case raw_io
+          when UNIXServer
+            conn = raw_io.accept?
+            if conn
+              conn.close rescue nil
+              @on_activate.call(bs.unit.service, bs)
             end
-          rescue ex : IO::Error
-            # Socket may have been closed during shutdown.
-            break
-          rescue ex
-            STDERR.puts "[socket:#{bs.unit.name}] accept error: #{ex.message}"
-            sleep 1.second
+          when TCPServer
+            conn = raw_io.accept?
+            if conn
+              conn.close rescue nil
+              @on_activate.call(bs.unit.service, bs)
+            end
           end
+        rescue ex : IO::Error
+          break
+        rescue ex
+          STDERR.puts "[socket:#{bs.unit.name}] accept error: #{ex.message}"
+          sleep 1.second
         end
       end
     end
@@ -264,17 +243,7 @@ module Litin
     # FD passing — build the environment variables for sd_listen_fds protocol
     # ---------------------------------------------------------------------------
 
-    # Returns the environment variables to inject into a service process
-    # so it can find its inherited socket FDs.
-    #
-    # The FDs themselves must be passed via Process heredity (not closed
-    # with FD_CLOEXEC). Crystal's Process.new does not expose fine-grained
-    # FD inheritance control, so we use a helper that writes the FD numbers
-    # to the env and clears FD_CLOEXEC on each FD before exec.
-    def self.build_listen_env(
-      pid : Int32,
-      sockets : Array(BoundSocket),
-    ) : Hash(String, String)
+    def self.build_listen_env(pid : Int32, sockets : Array(BoundSocket)) : Hash(String, String)
       env = {} of String => String
       env["LISTEN_PID"] = pid.to_s
       env["LISTEN_FDS"] = sockets.size.to_s

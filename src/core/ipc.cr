@@ -12,6 +12,7 @@
 # against (plain JSON on a socket) and avoids a custom binary format.
 
 require "json"
+require "socket"
 
 module Litin
   module IPC

@@ -151,10 +151,23 @@ module Litin
       # Format: "name: state  pid=N  uptime=Xs  restarts=N  last_exit=N"
       def status_line : String
         parts = ["#{name}: #{state}"]
-        parts << "pid=#{p}" if p = pid
-        parts << "uptime=#{format_duration(u)}" if u = uptime
-        parts << "last_exit=#{rc}" if rc = last_exit_code
-        parts << "restarts=#{restart_count}" if restart_count > 0
+
+        if p = pid
+          parts << "pid=#{p}"
+        end
+
+        if u = uptime
+          parts << "uptime=#{format_duration(u)}"
+        end
+
+        if rc = last_exit_code
+          parts << "last_exit=#{rc}"
+        end
+
+        if restart_count > 0
+          parts << "restarts=#{restart_count}"
+        end
+
         parts.join("  ")
       end
 
@@ -167,42 +180,58 @@ module Litin
         io << "    Target:      #{definition.target}\n"
         io << "    Enabled:     #{enabled?}\n"
         io << "    Masked:      #{masked?}\n"
+
         if p = pid
           io << "    PID:         #{p}\n"
         end
+
         if u = uptime
           io << "    Uptime:      #{format_duration(u)}\n"
         end
+
         if s = started_at
           io << "    Started:     #{s.to_rfc3339(fraction_digits: 0)}\n"
         end
+
         if s = stopped_at
           io << "    Stopped:     #{s.to_rfc3339(fraction_digits: 0)}\n"
         end
+
         if rc = last_exit_code
           io << "    Last exit:   #{rc}\n"
         end
+
         if restart_count > 0
           io << "    Restarts:    #{restart_count}\n"
         end
+
         if !failure_reason.empty?
           io << "    Failure:     #{failure_reason}\n"
         end
+
         if cp = cgroup_path
           io << "    cgroup:      #{cp}\n"
         end
+
         if !definition.cgroup.cpu_max.nil? || definition.cgroup.memory_max
           io << "    Resources:   "
           parts = [] of String
-          parts << "cpu=#{definition.cgroup.cpu_max}" if definition.cgroup.cpu_max
-          parts << "mem=#{definition.cgroup.memory_max}" if definition.cgroup.memory_max
-          parts << "pids=#{definition.cgroup.pids_max}" if definition.cgroup.pids_max
+          if definition.cgroup.cpu_max
+            parts << "cpu=#{definition.cgroup.cpu_max}"
+          end
+          if definition.cgroup.memory_max
+            parts << "mem=#{definition.cgroup.memory_max}"
+          end
+          if definition.cgroup.pids_max
+            parts << "pids=#{definition.cgroup.pids_max}"
+          end
           io << parts.join(" ") << "\n"
         end
-        t = transitions.last?
-        if t
+
+        if t = transitions.last?
           io << "    Last event:  #{t.to_s}\n"
         end
+
         io.to_s
       end
 
@@ -249,9 +278,15 @@ module Litin
         # cgroup
         if definition.cgroup.any?
           cg = {} of String => JSON::Any
-          cg["memory_max"] = JSON::Any.new(definition.cgroup.memory_max.not_nil!) if definition.cgroup.memory_max
-          cg["cpu_max"] = JSON::Any.new(definition.cgroup.cpu_max.not_nil!) if definition.cgroup.cpu_max
-          cg["pids_max"] = JSON::Any.new(definition.cgroup.pids_max.not_nil!) if definition.cgroup.pids_max
+          if definition.cgroup.memory_max
+            cg["memory_max"] = JSON::Any.new(definition.cgroup.memory_max.not_nil!)
+          end
+          if definition.cgroup.cpu_max
+            cg["cpu_max"] = JSON::Any.new(definition.cgroup.cpu_max.not_nil!)
+          end
+          if definition.cgroup.pids_max
+            cg["pids_max"] = JSON::Any.new(definition.cgroup.pids_max.not_nil!)
+          end
           h["cgroup"] = JSON::Any.new(cg)
         end
 

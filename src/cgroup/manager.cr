@@ -36,7 +36,7 @@ module Litin
       controllers = %w[cpu memory io pids]
       enable_str = controllers.map { |c| "+#{c}" }.join(" ")
 
-      write_cgroup_file(SUBTREE_CTRL, enable_str)
+      CGroup.write_cgroup_file(SUBTREE_CTRL, enable_str)
     rescue ex
       STDERR.puts "[cgroup] setup warning: #{ex.message} (cgroup support may be limited)"
     end
@@ -72,7 +72,7 @@ module Litin
         write_if_set("cpuset.cpus", limits.cpuset_cpus)
 
         if limits.oom_group
-          write_cgroup_file(File.join(@path, "memory.oom.group"), "1")
+          CGroup.write_cgroup_file(File.join(@path, "memory.oom.group"), "1")
         end
       rescue ex
         STDERR.puts "[cgroup:#{@service_name}] apply_limits warning: #{ex.message}"
@@ -80,7 +80,7 @@ module Litin
 
       # Move a process into this cgroup.
       def assign_pid(pid : Int32) : Nil
-        write_cgroup_file(File.join(@path, "cgroup.procs"), pid.to_s)
+        CGroup.write_cgroup_file(File.join(@path, "cgroup.procs"), pid.to_s)
       rescue ex
         STDERR.puts "[cgroup:#{@service_name}] assign_pid #{pid} failed: #{ex.message}"
       end
@@ -92,7 +92,7 @@ module Litin
 
         kill_file = File.join(@path, "cgroup.kill")
         if File.exists?(kill_file)
-          write_cgroup_file(kill_file, "1")
+          CGroup.write_cgroup_file(kill_file, "1")
         else
           kill_all_fallback
         end
@@ -132,7 +132,7 @@ module Litin
 
       private def write_if_set(filename : String, value : String?) : Nil
         return unless value
-        write_cgroup_file(File.join(@path, filename), value)
+        CGroup.write_cgroup_file(File.join(@path, filename), value)
       end
 
       private def kill_all_fallback : Nil

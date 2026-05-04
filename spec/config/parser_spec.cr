@@ -4,20 +4,20 @@ require "spec"
 require "../../src/config/parser"
 
 module Litin::Config
-  describe Parser do
-    # Helper: write a temp service file and parse it.
-    def parse_string(content : String) : ServiceDefinition
-      path = File.tempfile("litin-test-", ".sh") do |f|
-        f.print(content)
-      end.path
+  # Helper at module level — Crystal does not allow def inside describe blocks.
+  private def self.parse_string(content : String) : ServiceDefinition
+    path = File.tempfile("litin-test-", ".sh") do |f|
+      f.print(content)
+    end.path
 
-      begin
-        Parser.parse_file(path)
-      ensure
-        File.delete(path) rescue nil
-      end
+    begin
+      Parser.parse_file(path)
+    ensure
+      File.delete(path) rescue nil
     end
+  end
 
+  describe Parser do
     it "parses name and description" do
       sdef = parse_string(<<-SH)
         name="myservice"
@@ -136,7 +136,6 @@ module Litin::Config
     end
 
     it "ignores unknown keys silently" do
-      # Should not raise.
       sdef = parse_string(%(my_custom_var="foo"\n))
       sdef.name.should eq("")
     end

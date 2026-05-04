@@ -3,12 +3,12 @@
 # Hybrid service-definition parser.
 #
 # Parsing strategy
-# ─────────────────
-# Static metadata (name, command, user, type, restart, cgroup_* …) are
-# extracted with a Crystal regex scanner.  No shell is invoked during
+# ----------------
+# Static metadata (name, command, user, type, restart, cgroup_* ...) are
+# extracted with a Crystal regex scanner. No shell is invoked during
 # parsing — the file is read once as text.
 #
-# Hook detection (pre_start, post_stop, reload, …) is done by scanning
+# Hook detection (pre_start, post_stop, reload, ...) is done by scanning
 # for lines matching /^hook_name\s*\(\s*\)/.
 #
 # The depend() function body is extracted by brace-depth tracking and
@@ -19,10 +19,6 @@
 #
 #     environment=("KEY=val" "OTHER=val")   # parenthesised list
 #     environment="KEY=val"                 # single value
-#
-# Variable expansion (e.g. command="$base -D") is NOT performed here.
-# The supervisor passes the literal string to /bin/sh -c, which handles
-# expansion at exec time.
 
 require "./service_definition"
 
@@ -31,9 +27,7 @@ module Litin
     class ParseError < Exception; end
 
     class Parser
-      # Matches: KEY="value"  KEY='value'  KEY=value  (no spaces around =)
-      SCALAR_RE = /^[ \t]*([A-Za-z_][A-Za-z0-9_]*)[ \t]*=[ \t]*(?:"([^"\\]*)"|'([^'\\]*)'|([^\s#"']+))/
-      # Matches: KEY=("a" "b")  or  KEY=('a' 'b')
+      SCALAR_RE      = /^[ \t]*([A-Za-z_][A-Za-z0-9_]*)[ \t]*=[ \t]*(?:"([^"\\]*)"|'([^'\\]*)'|([^\s#"']+))/
       ARRAY_OPEN_RE  = /^[ \t]*([A-Za-z_][A-Za-z0-9_]*)[ \t]*=[ \t]*\(/
       DEPEND_OPEN_RE = /^[ \t]*depend\s*\(\s*\)\s*\{?/
       HOOK_RE        = /^[ \t]*(pre_start|post_start|pre_stop|post_stop|reload|healthcheck)\s*\(\s*\)/
@@ -58,7 +52,6 @@ module Litin
         process_lines
 
         if @def.name.empty?
-          # Derive name from directory name (preferred) or filename.
           parent = File.basename(File.dirname(@path))
           @def.name = if parent == "." || parent.empty?
                         File.basename(@path, ".sh")
@@ -84,14 +77,12 @@ module Litin
           unless in_block
             if line.match(DEPEND_OPEN_RE)
               in_block = true
-              # Count any braces on the same opening line.
               depth = line.count('{') - line.count('}')
-              depth = 1 if depth <= 0 # implicit: depend() { on next line
+              depth = 1 if depth <= 0
             end
             next
           end
 
-          # Inside the block.
           depth += line.count('{') - line.count('}')
           if depth <= 0
             in_block = false
@@ -114,23 +105,19 @@ module Litin
           i += 1
           next if line.empty? || line.starts_with?('#')
 
-          # Hook function definitions.
           if m = line.match(HOOK_RE)
             record_hook(m[1])
             next
           end
 
-          # Array variable assignment spanning possibly multiple lines.
           if m = line.match(ARRAY_OPEN_RE)
             key = m[1]
-            # Collect everything from the '(' to the matching ')'.
             raw_arr, lines_consumed = collect_array(@lines, i - 1)
             i += lines_consumed
             apply_array(key, raw_arr)
             next
           end
 
-          # Scalar assignment.
           if m = line.match(SCALAR_RE)
             apply_scalar(m[1], m[2]? || m[3]? || m[4]? || "")
           end
@@ -139,8 +126,6 @@ module Litin
         parse_depend_body
       end
 
-      # Collect characters from the '(' through the matching ')' across lines.
-      # Returns [collected_string, extra_lines_consumed].
       private def collect_array(lines : Array(String), start_idx : Int32) : {String, Int32}
         buf = String::Builder.new
         depth = 0
@@ -167,7 +152,6 @@ module Litin
         when "environment"
           Parser.parse_array_value(raw).each { |v| @def.environment << v }
         end
-        # Other array fields can be added here.
       end
 
       # -----------------------------------------------------------------------
@@ -213,9 +197,7 @@ module Litin
                            RestartPolicy::OnFailure
                          end
         when "environment"
-          # Single-value form: environment="KEY=val"
           @def.environment << value unless value.empty?
-          # Healthcheck configuration
         when "healthcheck_type"
           @def.healthcheck_type = value
         when "healthcheck_http_url"
@@ -235,7 +217,6 @@ module Litin
         when "healthcheck_timeout"
           @def.healthcheck_timeout = value.to_i? || 5
         end
-        # Unknown keys silently ignored — used only in hook bodies.
       end
 
       private def apply_cgroup(suffix : String, value : String)
@@ -295,7 +276,6 @@ module Litin
       # Public helper: parse shell array syntax
       # -----------------------------------------------------------------------
 
-      # Converts  ("A=1" "B=2")  or  "A=1"  into  ["A=1", "B=2"].
       def self.parse_array_value(raw : String) : Array(String)
         s = raw.strip
         return [s] unless s.starts_with?('(')
@@ -335,7 +315,7 @@ module Litin
     end
 
     # ==========================================================================
-    # Loader — discovers and loads all service definitions from a directory tree
+    # Loader
     # ==========================================================================
 
     class Loader
@@ -346,6 +326,9 @@ module Litin
       def self.load_all(services_dir : String = SERVICES_DIR) : Array(ServiceDefinition)
         new(services_dir).load_all
       end
+
+      # Explicit type annotation required so the compiler can infer @enabled_names
+      @enabled_names : Set(String)
 
       def initialize(
         @services_dir : String = SERVICES_DIR,
@@ -378,12 +361,6 @@ module Litin
         result.sort_by(&.name)
       end
 
-      # -----------------------------------------------------------------------
-      # Private helpers
-      # -----------------------------------------------------------------------
-
-      # Return the set of service names that are symlinked into any
-      # *.wants/ directory under the targets root.
       private def resolve_enabled_names : Set(String)
         names = Set(String).new
         Dir.glob(File.join(WANTS_GLOB, "*")) do |link|
@@ -397,8 +374,7 @@ module Litin
       private def masked?(name : String) : Bool
         path = File.join(@masks_dir, name)
         return false unless File.exists?(path)
-        # Masked entries are symlinks to /dev/null.
-        File.symlink?(path) && File.real_path(path) == "/dev/null"
+        File.symlink?(path) && File.realpath(path) == "/dev/null"
       rescue
         false
       end
@@ -413,15 +389,6 @@ module Litin
         end
       end
 
-      # Directory-based service (preferred layout).
-      #
-      # Supported layouts:
-      #   service.sh  — Litin-native definition (may also have run/finish)
-      #   run         — Runit-compatible bare run script (no service.sh)
-      #
-      # Optional files in the directory:
-      #   finish      — runs after service exits (Runit finish script)
-      #   env/        — runit-compatible environment directory
       private def load_directory(path : String, name : String) : ServiceDefinition?
         service_sh = File.join(path, "service.sh")
         run_script = File.join(path, "run")
@@ -432,25 +399,25 @@ module Litin
                  d.name = name if d.name.empty?
                  d
                elsif File.exists?(run_script)
-                 # Runit-style: synthesise a minimal definition.
                  d = ServiceDefinition.new
                  d.name = name
                  d.source_path = run_script
-                 d.restart = RestartPolicy::Always # Runit default
+                 d.restart = RestartPolicy::Always
                  d
                else
                  return nil
                end
 
-        sdef.run_script = run_script if File.exists?(run_script) && File.executable?(run_script)
-        sdef.finish_script = finish_sh if File.exists?(finish_sh) && File.executable?(finish_sh)
-        sdef.source_path = path # point to the directory, not the script
+        sdef.run_script = run_script if File.exists?(run_script) && File::Info.executable?(run_script)
+        sdef.finish_script = finish_sh if File.exists?(finish_sh) && File::Info.executable?(finish_sh)
+        sdef.source_path = path
 
         sdef
       end
 
       private def load_single_file(path : String, name : String) : ServiceDefinition?
         sdef = Parser.parse_file(path)
+        # File.basename with extension arg is correct in Crystal 1.19.1.
         sdef.name = File.basename(name, ".sh") if sdef.name.empty?
         sdef
       end

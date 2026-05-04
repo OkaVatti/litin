@@ -6,14 +6,14 @@ require "../../src/config/service_definition"
 require "../../src/service/healthcheck"
 
 module Litin::Service
-  describe HealthProbe do
-    def make_sdef(name : String = "test") : Config::ServiceDefinition
-      s = Config::ServiceDefinition.new
-      s.name = name
-      s.source_path = ""
-      s
-    end
+  private def self.make_sdef(name : String = "test") : Config::ServiceDefinition
+    s = Config::ServiceDefinition.new
+    s.name = name
+    s.source_path = ""
+    s
+  end
 
+  describe HealthProbe do
     # -------------------------------------------------------------------------
     # PID probe
     # -------------------------------------------------------------------------
@@ -43,7 +43,6 @@ module Litin::Service
       it "returns false for a non-existent PID" do
         sdef = make_sdef
         sdef.healthcheck_type = "pid"
-        # PID 2000000 almost certainly does not exist.
         probe = HealthProbe.new(sdef, 2_000_000)
         probe.run.should be_false
       end
@@ -55,7 +54,6 @@ module Litin::Service
 
     describe "tcp probe" do
       it "returns true when the port is open" do
-        # Bind a real TCP server on a random port.
         server = TCPServer.new("127.0.0.1", 0)
         port = server.local_address.port
 
@@ -77,7 +75,7 @@ module Litin::Service
         sdef = make_sdef
         sdef.healthcheck_type = "tcp"
         sdef.healthcheck_tcp_host = "127.0.0.1"
-        sdef.healthcheck_tcp_port = 19_999 # almost certainly nothing here
+        sdef.healthcheck_tcp_port = 19_999
         sdef.healthcheck_timeout = 1
 
         probe = HealthProbe.new(sdef, nil)
@@ -87,7 +85,6 @@ module Litin::Service
       it "returns false when host/port are not configured" do
         sdef = make_sdef
         sdef.healthcheck_type = "tcp"
-        # tcp_host is nil, tcp_port is 0.
         probe = HealthProbe.new(sdef, nil)
         probe.run.should be_false
       end
@@ -149,7 +146,7 @@ module Litin::Service
         sdef.source_path = ""
         sdef.healthcheck_type = "shell"
         probe = HealthProbe.new(sdef, Process.pid)
-        probe.run.should be_true # pid probe: self is alive
+        probe.run.should be_true
       end
     end
 
@@ -165,11 +162,10 @@ module Litin::Service
         sdef.healthcheck_http_status = 200
         sdef.healthcheck_timeout = 1
 
-        # Without a server running on 9999 this will fail — that's expected.
         probe = HealthProbe.new(sdef, nil)
         result = probe.run
         result.should be_a(Bool)
-        result.should be_false # no server on 9999
+        result.should be_false
       end
 
       it "parses https URLs and defaults to port 443" do
@@ -179,7 +175,6 @@ module Litin::Service
         sdef.healthcheck_timeout = 1
 
         probe = HealthProbe.new(sdef, nil)
-        # localhost:443 very likely not open in test env — just check no crash.
         result = probe.run
         result.should be_a(Bool)
       end
