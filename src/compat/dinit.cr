@@ -108,10 +108,10 @@ module Litin
       end
 
       # -----------------------------------------------------------------------
-      # Helpers
+      # Helpers (public for testing)
       # -----------------------------------------------------------------------
 
-      private def self.need_args(action : String, args : Array(String)) : Bool
+      def self.need_args(action : String, args : Array(String)) : Bool
         if args.empty?
           STDERR.puts "dinitctl: #{action} requires at least one service name"
           return false
@@ -172,7 +172,7 @@ module Litin
         exit_code
       end
 
-      private def self.parse_options(tokens : Array(String)) : Hash(String, String)
+      def self.parse_options(tokens : Array(String)) : Hash(String, String)
         opts = {} of String => String
         tokens.each do |t|
           next unless t.starts_with?("-")

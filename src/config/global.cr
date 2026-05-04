@@ -36,7 +36,7 @@ module Litin
 
       # ── Logging ──────────────────────────────────────────────────────────────
       property log_dir : String = "/var/log/litin"
-      property log_max_bytes : Int64 = 10 * 1024 * 1024_i64 # 10 MiB
+      property log_max_bytes : Int64 = 10_i64 * 1024_i64 * 1024_i64 # 10 MiB
       property log_keep : Int32 = 3
 
       # ── Boot ─────────────────────────────────────────────────────────────────

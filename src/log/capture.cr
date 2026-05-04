@@ -23,7 +23,8 @@ module Litin
     LOG_KEEP      = 3                # rotated generations to keep
 
     class LogManager
-      def initialize(@log_dir : String = LOG_DIR)
+      # Uses LITIN_LOG_DIR environment variable if set, falls back to LOG_DIR.
+      def initialize(@log_dir : String = ENV["LITIN_LOG_DIR"]? || LOG_DIR)
         Dir.mkdir_p(@log_dir) rescue nil
       end
 
@@ -36,6 +37,8 @@ module Litin
       def open_writer(service_name : String) : IO
         path = log_path(service_name)
         rotate_if_needed(path)
+        # Ensure parent directory exists (may have been deleted)
+        Dir.mkdir_p(File.dirname(path)) rescue nil
         TimestampedWriter.new(path)
       rescue ex
         STDERR.puts "[log] cannot open #{service_name} log: #{ex.message}"
@@ -124,6 +127,8 @@ module Litin
 
     class TimestampedWriter < IO
       def initialize(path : String)
+        # Ensure parent directory exists
+        Dir.mkdir_p(File.dirname(path)) rescue nil
         @file = File.open(path, "a")
       end
 

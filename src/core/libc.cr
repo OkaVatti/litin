@@ -16,6 +16,10 @@ lib LibC
   LINUX_REBOOT_CMD_POWER_OFF  = 0x4321fedc
   LINUX_REBOOT_CMD_SW_SUSPEND = 0xd000fce2
 
+  PR_SET_CHILD_SUBREAPER = 36
+
+  fun prctl(option : Int32, arg2 : UInt64, arg3 : UInt64, arg4 : UInt64, arg5 : UInt64) : Int32
+
   fun reboot(cmd : Int32) : Int32
 
   # ---------------------------------------------------------------------------

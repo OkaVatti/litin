@@ -26,15 +26,15 @@ module Litin
       end
 
       # Write the current PID (or `pid`) to `path`.
-      def self.write_pid(path : String, pid : Int32 = Process.pid) : Nil
+      def self.write_pid(path : String, pid : Int64 = Process.pid) : Nil
         atomic_write(path, "#{pid}\n", 0o644)
       end
 
       # Read the PID stored in `path`. Returns nil if the file does not
       # exist or does not contain a valid integer.
-      def self.read_pid(path : String) : Int32?
+      def self.read_pid(path : String) : Int64?
         return nil unless File.exists?(path)
-        File.read(path).strip.to_i?
+        File.read(path).strip.to_i64?
       rescue
         nil
       end

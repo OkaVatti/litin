@@ -6,7 +6,7 @@ require "../../src/graph/dependency"
 
 module Litin::Graph
   # Helper: build a minimal ServiceDefinition with given name and deps.
-  private def make_service(
+  def self.make_service(
     name : String,
     requires : Array(String) = [] of String,
     after : Array(String) = [] of String,

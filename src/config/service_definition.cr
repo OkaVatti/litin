@@ -147,7 +147,7 @@ module Litin
       end
 
       def to_s(io : IO)
-        io << "ServiceDefinition(#{name}, type=#{type}, restart=#{restart}, target=#{target})"
+        io << "ServiceDefinition(#{name}, type=#{type.to_s.downcase}, restart=#{restart.to_s.downcase.gsub('_','-')}, target=#{target})"
       end
 
       # Validate the definition and return a list of error strings.

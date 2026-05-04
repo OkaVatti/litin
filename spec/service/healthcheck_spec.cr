@@ -1,5 +1,3 @@
-# spec/service/healthcheck_spec.cr
-
 require "spec"
 require "file_utils"
 require "../../src/config/service_definition"
@@ -22,7 +20,7 @@ module Litin::Service
       it "returns true for a live PID (self)" do
         sdef = make_sdef
         sdef.healthcheck_type = "pid"
-        probe = HealthProbe.new(sdef, Process.pid)
+        probe = HealthProbe.new(sdef, Process.pid.to_i32)
         probe.run.should be_true
       end
 
@@ -111,7 +109,7 @@ module Litin::Service
           sdef.healthcheck_type = "shell"
           sdef.healthcheck_timeout = 5
 
-          probe = HealthProbe.new(sdef, Process.pid)
+          probe = HealthProbe.new(sdef, Process.pid.to_i32)
           probe.run.should be_true
         ensure
           File.delete(path) rescue nil
@@ -145,7 +143,7 @@ module Litin::Service
         sdef = make_sdef
         sdef.source_path = ""
         sdef.healthcheck_type = "shell"
-        probe = HealthProbe.new(sdef, Process.pid)
+        probe = HealthProbe.new(sdef, Process.pid.to_i32)
         probe.run.should be_true
       end
     end

@@ -22,6 +22,7 @@
 #   4. environment= array in the service definition
 #   5. Litin-injected vars (NOTIFY_SOCKET, MAINPID, LITIN_CGROUP)
 
+require "socket"
 require "./state"
 require "../config/service_definition"
 require "../cgroup/manager"
@@ -476,15 +477,20 @@ module Litin
     end
 
     # ---------------------------------------------------------------------------
-    # Global zombie reaper — single fiber, shared across all supervisors.
+    # Global zombie reaper — a single fiber loops quickly, collecting all
+    # exited children and broadcasting them on REAPER_CHANNEL.
     # ---------------------------------------------------------------------------
 
+    @@reaper_started : Bool = false
+
     def self.start_reaper : Nil
-      spawn do
-        Signal::CHLD.trap { collect_exits }
+      return if @@reaper_started
+      @@reaper_started = true
+
+      spawn(name: "litin-reaper") do
         loop do
-          sleep 1.second
           collect_exits
+          sleep 10.milliseconds
         end
       end
     end

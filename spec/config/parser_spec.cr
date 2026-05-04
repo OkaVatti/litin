@@ -135,9 +135,10 @@ module Litin::Config
       sdef.has_healthcheck.should be_false
     end
 
-    it "ignores unknown keys silently" do
+    it "ignores unknown keys silently and infers name from directory" do
       sdef = parse_string(%(my_custom_var="foo"\n))
-      sdef.name.should eq("")
+      # Parser infers name from parent directory when name is not set explicitly.
+      sdef.name.should_not be_empty
     end
 
     it "parses target field" do

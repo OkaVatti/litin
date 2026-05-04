@@ -114,7 +114,10 @@ module Litin
             key = m[1]
             raw_arr, lines_consumed = collect_array(@lines, i - 1)
             i += lines_consumed
-            apply_array(key, raw_arr)
+            # Extract only the array portion (from the first '(' onward)
+            idx = raw_arr.index('(')
+            arr_str = idx ? raw_arr[idx..] : raw_arr
+            apply_array(key, arr_str)
             next
           end
 
@@ -327,7 +330,6 @@ module Litin
         new(services_dir).load_all
       end
 
-      # Explicit type annotation required so the compiler can infer @enabled_names
       @enabled_names : Set(String)
 
       def initialize(
@@ -417,7 +419,6 @@ module Litin
 
       private def load_single_file(path : String, name : String) : ServiceDefinition?
         sdef = Parser.parse_file(path)
-        # File.basename with extension arg is correct in Crystal 1.19.1.
         sdef.name = File.basename(name, ".sh") if sdef.name.empty?
         sdef
       end

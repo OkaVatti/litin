@@ -8,11 +8,11 @@ require "../../src/config/service_definition"
 require "../../src/graph/dependency"
 
 module Litin::Graph
-  # Build a minimal ServiceDefinition with explicit require/after deps.
-  private def svc(name : String, requires : Array(String) = [] of String,
-                  after : Array(String) = [] of String,
-                  before : Array(String) = [] of String,
-                  conflicts : Array(String) = [] of String) : Config::ServiceDefinition
+  # Helper: build a minimal ServiceDefinition with explicit require/after deps.
+  def self.svc(name : String, requires : Array(String) = [] of String,
+               after : Array(String) = [] of String,
+               before : Array(String) = [] of String,
+               conflicts : Array(String) = [] of String) : Config::ServiceDefinition
     s = Config::ServiceDefinition.new
     s.name = name
     s.command = "/bin/true"
@@ -23,7 +23,7 @@ module Litin::Graph
     s
   end
 
-  def build(sdefs : Array(Config::ServiceDefinition)) : DependencyGraph
+  def self.build(sdefs : Array(Config::ServiceDefinition)) : DependencyGraph
     g = DependencyGraph.new
     g.add_all(sdefs)
     g

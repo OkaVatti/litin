@@ -1,6 +1,7 @@
 # spec/log/capture_spec.cr
 
 require "spec"
+require "file_utils"
 require "../../src/log/capture"
 
 module Litin::Log

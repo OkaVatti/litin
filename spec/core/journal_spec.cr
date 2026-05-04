@@ -4,11 +4,12 @@ require "spec"
 require "../../src/core/journal"
 
 module Litin::Core
-  describe Journal do
-    def fresh : Journal
-      Journal.new(capacity: 16, persist: false)
-    end
+  # Helper to create a small memory-only journal for testing.
+  def self.fresh : Journal
+    Journal.new(capacity: 16, persist: false)
+  end
 
+  describe Journal do
     it "records events and reports size" do
       j = fresh
       j.size.should eq(0)
@@ -47,7 +48,7 @@ module Litin::Core
       events = j.query(limit: 10)
       events[0].ok.should be_true
       events[1].ok.should be_false
-      events[1].msg.should contain("2")
+      events[1].msg.includes?("2").should be_true
     end
 
     it "filters by service name" do

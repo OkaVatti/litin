@@ -33,13 +33,20 @@ require "./log/capture"
 
 module Litin
   class Daemon
-    SOCKET_PATH  = IPC::SOCKET_PATH
-    SERVICES_DIR = Config::Loader::SERVICES_DIR
-    SOCKETS_DIR  = Socket::SocketParser::SOCKETS_DIR
-    TIMERS_DIR   = Timer::TimerParser::TIMERS_DIR
-    TARGETS_DIR  = Config::TargetLoader::TARGETS_DIR
+    # Environment‑aware path accessors
+    getter services_dir : String
+    getter sockets_dir : String
+    getter timers_dir : String
+    getter targets_dir : String
+    getter socket_path : String
 
     def initialize
+      @services_dir = env_or_default("LITIND_SERVICES_DIR", Config::Loader::SERVICES_DIR)
+      @sockets_dir = env_or_default("LITIND_SOCKETS_DIR", Socket::SocketParser::SOCKETS_DIR)
+      @timers_dir = env_or_default("LITIND_TIMERS_DIR", Timer::TimerParser::TIMERS_DIR)
+      @targets_dir = env_or_default("LITIND_TARGETS_DIR", Config::TargetLoader::TARGETS_DIR)
+      @socket_path = env_or_default("LITIND_SOCKET_PATH", IPC::SOCKET_PATH)
+
       @records = {} of String => Service::ServiceRecord
       @supervisors = {} of String => Service::Supervisor
       @graph = Graph::DependencyGraph.new
@@ -98,7 +105,7 @@ module Litin
     end
 
     def load_services : Nil
-      sdefs = Config::Loader.load_all(SERVICES_DIR)
+      sdefs = Config::Loader.load_all(@services_dir)
       STDOUT.puts "[litind] loaded #{sdefs.size} service definition(s)"
 
       @graph = Graph::DependencyGraph.new
@@ -111,7 +118,7 @@ module Litin
     end
 
     def load_targets : Nil
-      @targets = Config::TargetLoader.load_all(TARGETS_DIR)
+      @targets = Config::TargetLoader.load_all(@targets_dir)
       STDOUT.puts "[litind] loaded #{@targets.size} target(s)"
     end
 
@@ -221,7 +228,6 @@ module Litin
       return false unless rec.state.running?
 
       if rec.definition.has_reload
-        # Source the service file and call reload().
         pid = rec.pid
         source = rec.definition.source_path
         script = <<-SHELL
@@ -235,7 +241,6 @@ module Litin
           error: Log::MANAGER.open_writer(name))
           .success?
       else
-        # Default: SIGHUP.
         if pid = rec.pid
           Process.signal(Signal::HUP, pid) rescue false
           true
@@ -296,7 +301,7 @@ module Litin
     # ---------------------------------------------------------------------------
 
     private def start_socket_manager : Nil
-      units = Socket::SocketParser.load_all(SOCKETS_DIR)
+      units = Socket::SocketParser.load_all(@sockets_dir)
       return if units.empty?
 
       @socket_manager.bind_all(units)
@@ -305,7 +310,7 @@ module Litin
     end
 
     private def start_timer_scheduler : Nil
-      @timer_scheduler.load_all(TIMERS_DIR)
+      @timer_scheduler.load_all(@timers_dir)
       @timer_scheduler.start
     end
 
@@ -314,11 +319,11 @@ module Litin
     # ---------------------------------------------------------------------------
 
     def start_ipc_server : Nil
-      Dir.mkdir_p(File.dirname(SOCKET_PATH))
-      File.delete(SOCKET_PATH) rescue nil
+      Dir.mkdir_p(File.dirname(@socket_path))
+      File.delete(@socket_path) rescue nil
 
-      server = UNIXServer.new(SOCKET_PATH)
-      File.chmod(SOCKET_PATH, 0o600)
+      server = UNIXServer.new(@socket_path)
+      File.chmod(@socket_path, 0o600)
 
       spawn do
         loop do
@@ -328,7 +333,7 @@ module Litin
         end
       end
 
-      STDOUT.puts "[litind] IPC: #{SOCKET_PATH}"
+      STDOUT.puts "[litind] IPC: #{@socket_path}"
     end
 
     private def handle_connection(conn : IPC::Connection) : Nil
@@ -436,8 +441,6 @@ module Litin
         handle_list_targets(conn)
       when "logs"
         handle_logs_request(req, conn)
-        # Note: handle_logs_request manages the connection lifetime for --follow.
-        # We return early to prevent the ensure conn.close in the caller.
         return
       when "reload-daemon"
         spawn { load_all_definitions }
@@ -491,15 +494,12 @@ module Litin
       num_lines = req.options["lines"]?.try(&.to_i?) || 50
       since_str = req.options["since"]?
 
-      # Send historical lines first.
       historical = Log::MANAGER.tail(name, num_lines)
 
-      # Apply --since filter if present.
       if since_str
         since_time = parse_since(since_str)
         if since_time
           historical = historical.select do |line|
-            # Log lines start with an RFC3339 timestamp.
             ts_end = line.index("  ")
             if ts_end
               ts = Time.parse_rfc3339(line[0...ts_end]) rescue nil
@@ -521,7 +521,6 @@ module Litin
         return
       end
 
-      # --follow: subscribe to new log lines.
       line_ch = Channel(String).new(256)
 
       @log_mutex.synchronize do
@@ -529,7 +528,6 @@ module Litin
         @log_followers[name] << line_ch
       end
 
-      # Stream lines until the client disconnects or sends an empty line.
       spawn do
         Log::MANAGER.follow(name, line_ch)
       end
@@ -544,7 +542,6 @@ module Litin
               break
             end
           when timeout(30.seconds)
-            # Keepalive: send an empty non-done frame.
             begin
               conn.send_response(IPC::Response.new(ok: true, done: false, payload: ""))
             rescue
@@ -562,7 +559,6 @@ module Litin
     end
 
     private def parse_since(s : String) : Time?
-      # Accept: "5m", "1h", "2d", or an ISO8601 timestamp.
       s = s.strip
       if m = s.match(/^(\d+)(m|min|h|hr|d|day)$/)
         n = m[1].to_i
@@ -595,8 +591,6 @@ module Litin
           perform_shutdown(reason)
           break
         when timeout(5.seconds)
-          # Periodic tick: nothing to do right now.
-          # Future: emit metrics, check for definition file changes, etc.
         end
       end
     end
@@ -608,11 +602,9 @@ module Litin
                     "#{t.reason.empty? ? "" : " (#{t.reason})"}"
       end
 
-      # Auto-restart failed required services.
       if rec.state == Service::State::Failed
         sdef = rec.definition
         if sdef.restart != Config::RestartPolicy::No && !rec.admin_stopped
-          # The supervisor handles the restart loop itself; this is just a log.
           STDOUT.puts "[litind] #{rec.name}: restart policy active (#{sdef.restart})"
         end
       end
@@ -635,7 +627,6 @@ module Litin
         running = wave.select { |n| @records[n]?.try(&.state.running?) }
         next if running.empty?
         running.each { |name| stop_service(name, cascade: false) }
-        # Give each wave up to 15 seconds to drain.
         deadline = Time.utc + 15.seconds
         until running.all? { |n| @records[n]?.try(&.state.terminal?) } || Time.utc > deadline
           sleep 500.milliseconds
@@ -643,6 +634,14 @@ module Litin
       end
 
       STDOUT.puts "[litind] all services stopped"
+    end
+
+    # ---------------------------------------------------------------------------
+    # Private helper
+    # ---------------------------------------------------------------------------
+
+    private def env_or_default(key : String, fallback : String) : String
+      ENV[key]? || fallback
     end
   end
 end

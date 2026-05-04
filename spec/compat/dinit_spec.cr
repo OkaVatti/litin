@@ -4,9 +4,9 @@ require "spec"
 require "../../src/compat/dinit"
 
 module Litin::Compat::Dinit
-  describe "dinitctl action mapping" do
-    # Table: dinitctl action → expected litinctl action
-    MAPPINGS = {
+  # Helper method to return the mapping table (constant → method to avoid dynamic constant error)
+  def self.mappings
+    {
       "start"   => "start",
       "wake"    => "start",
       "stop"    => "stop",
@@ -15,9 +15,11 @@ module Litin::Compat::Dinit
       "restart" => "restart",
       "trigger" => "start",
     }
+  end
 
+  describe "dinitctl action mapping" do
     it "maps actions correctly" do
-      MAPPINGS.each do |dinit_action, litin_action|
+      mappings.each do |dinit_action, litin_action|
         mapped = case dinit_action
                  when "start", "wake", "trigger" then "start"
                  when "stop", "release", "unpin" then "stop"
@@ -54,16 +56,9 @@ module Litin::Compat::Dinit
 
   describe "add-dep and rm-dep" do
     it "add-dep returns 1 with an informational message" do
-      # Capture stderr.
-      old_stderr = STDERR
-      buf = IO::Memory.new
-      STDERR.reopen(buf)
-
       # We can't call dinitctl() directly without an IPC socket, so we
       # test the branch logic symbolically.
       result = 1 # add-dep always returns 1
-      STDERR.reopen(old_stderr)
-
       result.should eq(1)
     end
   end

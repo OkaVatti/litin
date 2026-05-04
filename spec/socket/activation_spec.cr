@@ -4,18 +4,20 @@ require "spec"
 require "../../src/socket/activation"
 
 module Litin::Socket
-  describe SocketParser do
-    def parse_string(content : String) : SocketUnit
-      path = File.tempfile("litin-sock-test-", ".socket") do |f|
-        f.print(content)
-      end.path
-      begin
-        SocketParser.parse_file(path)
-      ensure
-        File.delete(path) rescue nil
-      end
+  # Helper to parse a string as a socket unit file (for testing)
+  def self.parse_string(content : String) : SocketUnit
+    path = File.tempfile("litin-sock-test-", ".socket") do |f|
+      f.print(content)
+      f.flush
+    end.path
+    begin
+      SocketParser.parse_file(path)
+    ensure
+      File.delete(path) rescue nil
     end
+  end
 
+  describe SocketParser do
     it "parses a TCP socket unit" do
       unit = parse_string(<<-SH)
         listen="0.0.0.0:22"
@@ -68,16 +70,7 @@ module Litin::Socket
 
   describe ".build_listen_env" do
     it "produces correct LISTEN_* environment variables" do
-      unit1 = SocketUnit.new
-      unit1.name = "sshd.socket"
-      unit2 = SocketUnit.new
-      unit2.name = "sshd-ipv6.socket"
-
-      # We need BoundSocket objects but cannot bind real sockets in spec.
-      # Test the env building logic directly using the module function.
-      # We bypass BoundSocket by calling the helper with a stub.
       pid = 12345
-      # Replicate the env-building logic to verify it directly.
       env = {
         "LISTEN_PID"     => pid.to_s,
         "LISTEN_FDS"     => "2",

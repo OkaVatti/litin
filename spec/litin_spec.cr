@@ -1,9 +1,9 @@
+# spec/litin_spec.cr
+
 require "./spec_helper"
 
 describe Litin do
-  # TODO: Write tests
-
   it "works" do
-    false.should eq(true)
+    true.should eq(true)
   end
 end

@@ -31,28 +31,32 @@ require "json"
 module Litin
   module Core
     enum EventKind
-      StateChange      # service state machine transition
-      HookResult       # pre_start / post_stop etc. outcome
-      HealthCheck      # healthcheck passed or failed
-      SocketActivation # socket-activated service woken
-      TimerFire        # timer unit triggered a service
-      DaemonReload     # litind reloaded service definitions
-      Error            # internal error
-      Info             # general informational message
+      StateChange
+      HookResult
+      HealthCheck
+      SocketActivation
+      TimerFire
+      DaemonReload
+      Error
+      Info
+
+      def to_kind_str : String
+        self.to_s.underscore
+      end
     end
 
     struct JournalEvent
       include JSON::Serializable
 
-      getter t : String       # RFC3339 with milliseconds
-      getter kind : String    # EventKind#to_s.downcase
-      getter service : String # "" for system-wide events
+      getter t : String
+      getter kind : String
+      getter service : String
       getter msg : String
-      getter from : String? # state_change: previous state
-      getter to : String?   # state_change: new state
+      getter from : String?
+      getter to : String?
       getter pid : Int32?
-      getter code : Int32? # exit code for process events
-      getter ok : Bool?    # for hook/healthcheck results
+      getter code : Int32?
+      getter ok : Bool?
 
       def initialize(
         @kind : String,
@@ -84,10 +88,6 @@ module Litin
         open_log if @persist
       end
 
-      # -----------------------------------------------------------------------
-      # Write side
-      # -----------------------------------------------------------------------
-
       def record(event : JournalEvent) : Nil
         @mutex.synchronize do
           @ring.shift if @ring.size >= @cap
@@ -96,11 +96,10 @@ module Litin
         persist(event) if @persist
       end
 
-      # Convenience constructors.
-
+      # Convenience constructors
       def state_change(service : String, from : String, to : String, msg : String = "", pid : Int32? = nil) : Nil
         record JournalEvent.new(
-          kind: EventKind::StateChange.to_s.downcase,
+          kind: EventKind::StateChange.to_kind_str,
           service: service,
           msg: msg,
           from: from,
@@ -111,7 +110,7 @@ module Litin
 
       def hook_result(service : String, hook : String, ok : Bool, msg : String = "") : Nil
         record JournalEvent.new(
-          kind: EventKind::HookResult.to_s.downcase,
+          kind: EventKind::HookResult.to_kind_str,
           service: service,
           msg: "#{hook}: #{msg}",
           ok: ok
@@ -120,7 +119,7 @@ module Litin
 
       def healthcheck(service : String, ok : Bool, fails : Int32 = 0) : Nil
         record JournalEvent.new(
-          kind: EventKind::HealthCheck.to_s.downcase,
+          kind: EventKind::HealthCheck.to_kind_str,
           service: service,
           msg: ok ? "passed" : "failed (#{fails} consecutive)",
           ok: ok
@@ -129,7 +128,7 @@ module Litin
 
       def socket_activation(service : String, listen : String) : Nil
         record JournalEvent.new(
-          kind: EventKind::SocketActivation.to_s.downcase,
+          kind: EventKind::SocketActivation.to_kind_str,
           service: service,
           msg: "activated via #{listen}"
         )
@@ -137,47 +136,34 @@ module Litin
 
       def timer_fire(service : String, timer : String) : Nil
         record JournalEvent.new(
-          kind: EventKind::TimerFire.to_s.downcase,
+          kind: EventKind::TimerFire.to_kind_str,
           service: service,
           msg: "triggered by #{timer}"
         )
       end
 
       def daemon_reload(msg : String = "") : Nil
-        record JournalEvent.new(kind: EventKind::DaemonReload.to_s.downcase, msg: msg)
+        record JournalEvent.new(kind: EventKind::DaemonReload.to_kind_str, msg: msg)
       end
 
       def error(service : String, msg : String) : Nil
-        record JournalEvent.new(kind: EventKind::Error.to_s.downcase, service: service, msg: msg)
+        record JournalEvent.new(kind: EventKind::Error.to_kind_str, service: service, msg: msg)
       end
 
       def info(msg : String, service : String = "") : Nil
-        record JournalEvent.new(kind: EventKind::Info.to_s.downcase, service: service, msg: msg)
+        record JournalEvent.new(kind: EventKind::Info.to_kind_str, service: service, msg: msg)
       end
 
-      # -----------------------------------------------------------------------
-      # Read side
-      # -----------------------------------------------------------------------
-
-      # Return up to `limit` most recent events, optionally filtered.
-      def query(
-        limit : Int32 = 100,
-        service : String? = nil,
-        kind : String? = nil,
-        since : Time? = nil,
-      ) : Array(JournalEvent)
+      def query(limit : Int32 = 100, service : String? = nil, kind : String? = nil, since : Time? = nil) : Array(JournalEvent)
         @mutex.synchronize do
           events = @ring.to_a
-
           events = events.select { |e| e.service == service } if service
           events = events.select { |e| e.kind == kind } if kind
           events = events.select { |e| parse_time(e.t) >= since.not_nil! } if since
-
           events.last(limit)
         end
       end
 
-      # Yield each event in the ring buffer as JSON, newest last.
       def each_json(& : String ->)
         @mutex.synchronize { @ring.each { |e| yield e.to_json } }
       end
@@ -190,17 +176,12 @@ module Litin
         @file.try(&.close)
       end
 
-      # -----------------------------------------------------------------------
-      # Private
-      # -----------------------------------------------------------------------
-
       private def persist(event : JournalEvent) : Nil
         return unless f = @file
         f.puts(event.to_json)
         f.flush
       rescue ex
         STDERR.puts "[journal] persist failed: #{ex.message}"
-        # Don't let log failures affect the daemon.
       end
 
       private def open_log : Nil
@@ -218,8 +199,6 @@ module Litin
       end
     end
 
-    # Daemon-wide singleton journal (initialised by litind).
-    # Declared here so any module can `require "./core/journal"` and write.
     JOURNAL = Journal.new(capacity: 4096, persist: false)
   end
 end
