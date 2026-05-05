@@ -174,25 +174,23 @@ module Litin
           LibC.chdir("/")
         end
 
-        # Drop privileges using Crystal 1.19.1 System::User / System::Group.
+        # Drop privileges using direct libc calls.
         if g = group
-          begin
-            grp = System::Group.find_by(name: g)
-            LibC.setgid(grp.id.to_u32)
-          rescue System::Group::NotFoundError
+          grp_ptr = LibC.getgrnam(g)
+          if grp_ptr.null?
             STDERR.puts "chpst: unknown group: #{g}"
             return 1
           end
+          LibC.setgid(grp_ptr.value.gr_gid)
         end
 
         if u = user
-          begin
-            pw = System::User.find_by(name: u)
-            LibC.setuid(pw.id.to_u32)
-          rescue System::User::NotFoundError
+          pw_ptr = LibC.getpwnam(u)
+          if pw_ptr.null?
             STDERR.puts "chpst: unknown user: #{u}"
             return 1
           end
+          LibC.setuid(pw_ptr.value.pw_uid)
         end
 
         # exec the command.
@@ -200,7 +198,6 @@ module Litin
         args = cmd_argv[1..]
         Process.exec(command, args, env: env)
         0 # unreachable
-
       rescue ex
         STDERR.puts "chpst: exec failed: #{ex.message}"
         111

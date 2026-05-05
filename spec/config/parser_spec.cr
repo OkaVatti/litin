@@ -2,6 +2,7 @@
 
 require "spec"
 require "../../src/config/parser"
+require "../../src/service/healthcheck"
 
 module Litin::Config
   # Helper at module level — Crystal does not allow def inside describe blocks.

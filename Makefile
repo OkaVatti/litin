@@ -37,37 +37,37 @@ $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
 
 $(BUILD_DIR)/litin-init: $(BUILD_DIR) src/litin_init.cr src/**/*.cr
-	$(CRYSTAL) build $(CRYSTAL_FLAGS) -o $@ src/litin_init.cr
+	$(CRYSTAL) build $(CRYSTAL_FLAGS) -o $@ src/litin_init.cr --error-trace
 
 $(BUILD_DIR)/litind: $(BUILD_DIR) src/litind.cr src/**/*.cr
-	$(CRYSTAL) build $(CRYSTAL_FLAGS) -o $@ src/litind.cr
+	$(CRYSTAL) build $(CRYSTAL_FLAGS) -o $@ src/litind.cr --error-trace
 
 $(BUILD_DIR)/litinctl: $(BUILD_DIR) src/litinctl.cr src/**/*.cr
-	$(CRYSTAL) build $(CRYSTAL_FLAGS) -o $@ src/litinctl.cr
+	$(CRYSTAL) build $(CRYSTAL_FLAGS) -o $@ src/litinctl.cr --error-trace
 
 $(BUILD_DIR)/rc-service: $(BUILD_DIR) src/compat/rc_service_bin.cr src/**/*.cr
-	$(CRYSTAL) build $(CRYSTAL_FLAGS) -o $@ src/compat/rc_service_bin.cr
+	$(CRYSTAL) build $(CRYSTAL_FLAGS) -o $@ src/compat/rc_service_bin.cr --error-trace
 
 $(BUILD_DIR)/rc-update: $(BUILD_DIR) src/compat/rc_update_bin.cr src/**/*.cr
-	$(CRYSTAL) build $(CRYSTAL_FLAGS) -o $@ src/compat/rc_update_bin.cr
+	$(CRYSTAL) build $(CRYSTAL_FLAGS) -o $@ src/compat/rc_update_bin.cr --error-trace
 
 $(BUILD_DIR)/rc-status: $(BUILD_DIR) src/compat/rc_status_bin.cr src/**/*.cr
-	$(CRYSTAL) build $(CRYSTAL_FLAGS) -o $@ src/compat/rc_status_bin.cr
+	$(CRYSTAL) build $(CRYSTAL_FLAGS) -o $@ src/compat/rc_status_bin.cr --error-trace
 
 $(BUILD_DIR)/systemctl: $(BUILD_DIR) src/compat/systemctl_bin.cr src/**/*.cr
-	$(CRYSTAL) build $(CRYSTAL_FLAGS) -o $@ src/compat/systemctl_bin.cr
+	$(CRYSTAL) build $(CRYSTAL_FLAGS) -o $@ src/compat/systemctl_bin.cr --error-trace
 
 $(BUILD_DIR)/sv: $(BUILD_DIR) src/compat/sv_bin.cr src/**/*.cr
-	$(CRYSTAL) build $(CRYSTAL_FLAGS) -o $@ src/compat/sv_bin.cr
+	$(CRYSTAL) build $(CRYSTAL_FLAGS) -o $@ src/compat/sv_bin.cr --error-trace
 
 $(BUILD_DIR)/runsvdir: $(BUILD_DIR) src/compat/runsvdir_bin.cr src/**/*.cr
-	$(CRYSTAL) build $(CRYSTAL_FLAGS) -o $@ src/compat/runsvdir_bin.cr
+	$(CRYSTAL) build $(CRYSTAL_FLAGS) -o $@ src/compat/runsvdir_bin.cr --error-trace
 
 $(BUILD_DIR)/chpst: $(BUILD_DIR) src/compat/chpst_bin.cr src/**/*.cr
-	$(CRYSTAL) build $(CRYSTAL_FLAGS) -o $@ src/compat/chpst_bin.cr
+	$(CRYSTAL) build $(CRYSTAL_FLAGS) -o $@ src/compat/chpst_bin.cr --error-trace
 
 $(BUILD_DIR)/dinitctl: $(BUILD_DIR) src/compat/dinitctl_bin.cr src/**/*.cr
-	$(CRYSTAL) build $(CRYSTAL_FLAGS) -o $@ src/compat/dinitctl_bin.cr
+	$(CRYSTAL) build $(CRYSTAL_FLAGS) -o $@ src/compat/dinitctl_bin.cr --error-trace
 
 # ---------------------------------------------------------------------------
 # Testing
@@ -79,14 +79,14 @@ spec: spec-unit
 
 spec-unit:
 	$(CRYSTAL) spec spec/**/*_spec.cr spec/*_spec.cr --order random \
-	  --exclude spec/integration
+	  --exclude spec/integration --error-trace
 
 spec-integration: $(BUILD_DIR)/litind
-	$(CRYSTAL) spec spec/integration --order random
+	$(CRYSTAL) spec spec/integration --order random --error-trace
 
 # Run a single spec file: make spec-file FILE=spec/core/ipc_spec.cr
 spec-file:
-	$(CRYSTAL) spec $(FILE) --order random
+	$(CRYSTAL) spec $(FILE) --order random --error-trace
 
 # ---------------------------------------------------------------------------
 # Code quality
@@ -102,9 +102,9 @@ fmt-check:
 
 # Run the Crystal type checker without producing a binary.
 check:
-	$(CRYSTAL) build --no-codegen src/litind.cr
-	$(CRYSTAL) build --no-codegen src/litinctl.cr
-	$(CRYSTAL) build --no-codegen src/litin_init.cr
+	$(CRYSTAL) build --no-codegen src/litind.cr --error-trace
+	$(CRYSTAL) build --no-codegen src/litinctl.cr --error-trace
+	$(CRYSTAL) build --no-codegen src/litin_init.cr --error-trace
 
 # ---------------------------------------------------------------------------
 # Install / Uninstall

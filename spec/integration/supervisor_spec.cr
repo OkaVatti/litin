@@ -1,10 +1,5 @@
 # spec/integration/supervisor_spec.cr
 
-# Become a child subreaper so that the global reaper can collect children
-# even though we are not PID 1.
-require "../../src/core/libc"
-LibC.prctl(LibC::PR_SET_CHILD_SUBREAPER, 1_u64, 0_u64, 0_u64, 0_u64)
-
 private TEMP_LOG_DIR = "/tmp/litin-integration-logs-#{Random.rand(99_999)}"
 Dir.mkdir_p(TEMP_LOG_DIR) rescue nil
 ENV["LITIN_LOG_DIR"] = TEMP_LOG_DIR
@@ -14,8 +9,6 @@ require "file_utils"
 require "../../src/config/service_definition"
 require "../../src/service/state"
 require "../../src/service/supervisor"
-
-Litin::Service.start_reaper
 
 module Litin::Service
   def self.make_sdef_with_script(
@@ -56,7 +49,7 @@ module Litin::Service
     it "runs a simple service and reaches Ready" do
       sdef, dir = make_sdef_with_script(
         "simple-pass",
-        "true",
+        "sleep 10", # Keep alive so we can observe Ready and request stop
         type: Config::ServiceType::Simple,
         restart: Config::RestartPolicy::No,
       )

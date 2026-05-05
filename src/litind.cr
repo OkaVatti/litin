@@ -81,7 +81,7 @@ module Litin
       STDOUT.puts "[litind] starting (pid=#{Process.pid})"
 
       Signals.setup_litind(@reload_ch, @shutdown_ch)
-      Service.start_reaper
+      # Service.start_reaper
       CGroup.setup
 
       load_all_definitions

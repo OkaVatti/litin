@@ -39,13 +39,9 @@ module Litin
       getter exit_code : Int32
       getter success : Bool
 
-      def initialize(@pid : Int32, raw_wstatus : Int32)
-        # Decode POSIX wstatus from waitpid(2) manually, because we cannot
-        # construct a Process::Status from a raw wstatus integer in Crystal
-        # 1.19.1 via a public API.
-        exited = (raw_wstatus & 0x7f) == 0
-        @success = exited && ((raw_wstatus >> 8) & 0xff) == 0
-        @exit_code = exited ? ((raw_wstatus >> 8) & 0xff) : -1
+      def initialize(@pid : Int32, status : Process::Status)
+        @success = status.success?
+        @exit_code = status.system_exit_status.to_i32
       end
 
       def status_success? : Bool
@@ -234,7 +230,19 @@ module Litin
           output: @log_writer,
           error: @log_writer
         )
-        proc.pid.to_i32
+
+        pid = proc.pid.to_i32
+
+        # Crystal's built-in SIGCHLD handler reaps children, so the shared
+        # waitpid(-1) loop never sees them.  This fiber waits on the process
+        # directly and posts the exit event to the same channel the supervisor
+        # is already listening on.
+        spawn do
+          status = proc.wait
+          REAPER_CHANNEL.send(ExitEvent.new(pid, status)) rescue nil
+        end
+
+        pid
       rescue ex
         STDERR.puts "[supervisor:#{@record.name}] spawn failed: #{ex.message}"
         nil
@@ -473,33 +481,6 @@ module Litin
 
       private def notify_state_change : Nil
         @state_change.send(@record) rescue nil
-      end
-    end
-
-    # ---------------------------------------------------------------------------
-    # Global zombie reaper — a single fiber loops quickly, collecting all
-    # exited children and broadcasting them on REAPER_CHANNEL.
-    # ---------------------------------------------------------------------------
-
-    @@reaper_started : Bool = false
-
-    def self.start_reaper : Nil
-      return if @@reaper_started
-      @@reaper_started = true
-
-      spawn(name: "litin-reaper") do
-        loop do
-          collect_exits
-          sleep 10.milliseconds
-        end
-      end
-    end
-
-    def self.collect_exits : Nil
-      loop do
-        pid = LibC.waitpid(-1, out raw_status, LibC::WNOHANG)
-        break if pid <= 0
-        REAPER_CHANNEL.send(ExitEvent.new(pid.to_i32, raw_status)) rescue nil
       end
     end
   end

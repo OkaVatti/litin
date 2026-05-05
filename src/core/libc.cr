@@ -39,6 +39,12 @@ lib LibC
   fun sethostname(name : Char*, len : LibC::SizeT) : Int32
 
   # ---------------------------------------------------------------------------
+  # Identity functions – not in Crystal’s standard LibC
+  # ---------------------------------------------------------------------------
+  fun setuid(uid : UInt32) : Int32
+  fun setgid(gid : UInt32) : Int32
+
+  # ---------------------------------------------------------------------------
   # Group database struct (only Group is missing; Passwd exists in stdlib)
   # ---------------------------------------------------------------------------
   struct Group

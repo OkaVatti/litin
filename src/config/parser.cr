@@ -112,10 +112,9 @@ module Litin
 
           if m = line.match(ARRAY_OPEN_RE)
             key = m[1]
-            raw_arr, lines_consumed = collect_array(@lines, i - 1)
-            i += lines_consumed
-            idx = raw_arr.index('(')
-            arr_str = idx ? raw_arr[idx..] : raw_arr
+            # Extract the full parenthesised value, possibly spanning multiple lines.
+            arr_str, lines_used = extract_array_text(@lines, i - 1)
+            i += lines_used - 1 # compensate for the already incremented i
             apply_array(key, arr_str)
             next
           end
@@ -128,25 +127,56 @@ module Litin
         parse_depend_body
       end
 
-      private def collect_array(lines : Array(String), start_idx : Int32) : {String, Int32}
-        buf = String::Builder.new
+      # Returns the array text starting with '(' and ending with the matching ')',
+      # and the number of source lines consumed (1 if single-line, >1 if multi-line).
+      private def extract_array_text(lines : Array(String), start_idx : Int32) : {String, Int32}
+        # Find the first '(' after the '=' on the start line.
+        start_line = lines[start_idx]
+        eq_idx = start_line.index('=').not_nil!
+        pos = eq_idx + 1
+        while pos < start_line.size && start_line[pos].in?(' ', '\t')
+          pos += 1
+        end
+        # Now pos points to the opening '(' (or we assume so)
         depth = 0
-        extra = 0
+        in_quote = false
+        quote_char = '\0'
+        buf = String::Builder.new
+        line_idx = start_idx
+        first_line = true
 
-        lines[start_idx..].each_with_index do |raw, offset|
-          raw.each_char do |ch|
-            case ch
-            when '(' then depth += 1
-            when ')' then depth -= 1
-            end
+        loop do
+          cur_line = lines[line_idx]
+          # For the first line, start after the key= part; for continuation lines, use the whole line.
+          start_col = first_line ? pos : 0
+          first_line = false
+
+          cur_line[start_col..].each_char do |ch|
             buf << ch
-            return {buf.to_s, offset} if depth == 0
+            if in_quote
+              in_quote = false if ch == quote_char
+            else
+              case ch
+              when '"', '\''
+                in_quote = true
+                quote_char = ch
+              when '('
+                depth += 1
+              when ')'
+                depth -= 1
+                if depth == 0
+                  return {buf.to_s, line_idx - start_idx + 1}
+                end
+              end
+            end
           end
-          buf << '\n'
-          extra = offset + 1
+
+          line_idx += 1
+          # If we've exhausted lines without closing paren, return what we have (broken input).
+          break if line_idx >= lines.size
         end
 
-        {buf.to_s, extra}
+        {buf.to_s, line_idx - start_idx}
       end
 
       private def apply_array(key : String, raw : String)

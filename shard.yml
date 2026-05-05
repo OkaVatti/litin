@@ -5,7 +5,7 @@ description: >
   Litin — a modern, minimal init system for Linux.
   Supervisor-first, shell-friendly service definitions,
   cgroup v2 isolation, socket activation, structured event journal,
-  and compatibility shims for OpenRC, Runit, and systemd.
+  and compatibility shims for OpenRC, Runit, Systemd, and Dinit.
 
 authors:
   - OkaVatti <okavatti@proton.me>
