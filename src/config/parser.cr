@@ -114,7 +114,6 @@ module Litin
             key = m[1]
             raw_arr, lines_consumed = collect_array(@lines, i - 1)
             i += lines_consumed
-            # Extract only the array portion (from the first '(' onward)
             idx = raw_arr.index('(')
             arr_str = idx ? raw_arr[idx..] : raw_arr
             apply_array(key, arr_str)
